@@ -1,0 +1,54 @@
+{
+  "yearsExperience": 6,
+  "skills": [
+    "Python", "JavaScript", "TypeScript", "React", "Node.js",
+    "PostgreSQL", "Docker", "AWS", "REST APIs", "GraphQL",
+    "Agile", "CI/CD", "Git"
+  ],
+  "experience": [
+    {
+      "company": "Acme Corp",
+      "title": "Senior Software Engineer",
+      "dates": "Jan 2022 – Present",
+      "location": "San Francisco, CA",
+      "bullets": [
+        "Led migration of monolith to microservices, reducing deployment time by 65% and improving system uptime to 99.98%",
+        "Built real-time data pipeline processing 2M+ events/day using Kafka and Python, cutting analytics latency from 4h to 15min",
+        "Mentored team of 4 junior engineers; introduced code review standards that reduced production bugs by 40%",
+        "Designed and shipped customer-facing REST API consumed by 50+ enterprise clients generating $2M ARR"
+      ]
+    },
+    {
+      "company": "Startup XYZ",
+      "title": "Software Engineer",
+      "dates": "Jun 2019 – Dec 2021",
+      "location": "Remote",
+      "bullets": [
+        "Built React dashboard from scratch, adopted by 15K+ monthly active users within 6 months of launch",
+        "Optimized PostgreSQL queries reducing average response time by 70% for core product features",
+        "Implemented automated testing suite (Jest + Cypress) achieving 85% code coverage across frontend codebase",
+        "Collaborated with design team to implement accessible UI components meeting WCAG 2.1 AA standards"
+      ]
+    }
+  ],
+  "education": [
+    {
+      "school": "University of California, Berkeley",
+      "degree": "B.S.",
+      "field": "Computer Science",
+      "year": "2019",
+      "gpa": "3.7"
+    }
+  ],
+  "certifications": [
+    "AWS Certified Solutions Architect – Associate (2023)",
+    "Google Cloud Professional Data Engineer (2022)"
+  ],
+  "projects": [
+    {
+      "name": "OpenTask",
+      "description": "Open-source project management tool with 2K+ GitHub stars. Built with Next.js, tRPC, and Prisma.",
+      "tech": ["Next.js", "TypeScript", "Prisma", "tRPC"]
+    }
+  ]
+}
