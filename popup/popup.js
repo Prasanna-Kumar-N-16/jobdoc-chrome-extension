@@ -4,6 +4,23 @@ let lastRawReport = "";
 let lastResumeHTML = "";
 let lastCoverLetter = "";
 
+// ── SESSION PERSISTENCE ───────────────────────────────────────────────────────
+// Saves the last analysis to chrome.storage.local so it survives popup close/reopen.
+// Cleared only when user clicks "↺ New" or generates a fresh analysis.
+
+async function saveSession(data) {
+  await chrome.storage.local.set({ lastSession: data });
+}
+
+async function loadSession() {
+  const { lastSession } = await chrome.storage.local.get("lastSession");
+  return lastSession || null;
+}
+
+async function clearSession() {
+  await chrome.storage.local.remove("lastSession");
+}
+
 // ── INIT ─────────────────────────────────────────────────────────────────────
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -12,7 +29,41 @@ document.addEventListener("DOMContentLoaded", async () => {
   setupTabs();
   setupListeners();
   checkOllama();
+  await restoreLastSession(); // Restore previous results if they exist
 });
+
+async function restoreLastSession() {
+  const session = await loadSession();
+  if (!session) return;
+
+  lastRawReport   = session.report     || "";
+  lastResumeHTML  = session.resumeHTML || "";
+  lastCoverLetter = session.coverLetter || "";
+
+  // Restore JD text
+  if (session.jd) {
+    document.getElementById("jdInput").value = session.jd;
+    document.getElementById("charCount").textContent = session.jd.length.toLocaleString();
+  }
+
+  // Show the Report tab and render results
+  if (lastRawReport) {
+    renderReport(lastRawReport, session.atsScore);
+    document.getElementById("tabResults").style.display = "";
+
+    // Show session banner
+    const banner = document.getElementById("sessionBanner");
+    if (banner) {
+      banner.style.display = "flex";
+      document.getElementById("sessionInfo").textContent =
+        "📂 Restored — saved " + new Date(session.savedAt).toLocaleString();
+    }
+    document.getElementById("scoreSub").textContent =
+      "Restored from last session";
+
+    switchTab("results");
+  }
+}
 
 // ── TAB ROUTING ───────────────────────────────────────────────────────────────
 
@@ -150,8 +201,21 @@ async function analyze() {
     lastResumeHTML  = result.resumeHTML;
     lastCoverLetter = result.coverLetter || "";
 
+    // Persist to storage so it survives popup close/reopen
+    await saveSession({
+      report:      result.report,
+      resumeHTML:  result.resumeHTML,
+      coverLetter: result.coverLetter || "",
+      atsScore:    result.atsScore,
+      jd:          jd,
+      savedAt:     Date.now(),
+    });
+
     renderReport(result.report, result.atsScore);
     document.getElementById("tabResults").style.display = "";
+    // Hide "restored" banner — this is a fresh analysis
+    const banner = document.getElementById("sessionBanner");
+    if (banner) banner.style.display = "none";
     switchTab("results");
 
   } catch (e) {
@@ -425,6 +489,28 @@ async function seedIfEmpty() {
   });
 }
 
+// ── RESET TO CLEAN STATE ─────────────────────────────────────────────────────
+// Called by both "↺ New" and "✕ Clear" buttons.
+// Wipes the persisted session and resets the UI to blank analyze tab.
+
+async function resetToNewAnalysis() {
+  await clearSession();
+  lastRawReport  = "";
+  lastResumeHTML = "";
+  lastCoverLetter = "";
+
+  document.getElementById("tabResults").style.display = "none";
+  document.getElementById("sessionBanner").style.display = "none";
+  document.getElementById("jdInput").value = "";
+  document.getElementById("charCount").textContent = "0";
+  document.getElementById("reportContent").innerHTML = "";
+  document.getElementById("atsScore").textContent = "—";
+  document.getElementById("scoreBar").style.width = "0";
+  document.getElementById("scoreTitle").textContent = "Analysis Complete";
+  document.getElementById("scoreSub").textContent = "Review your tailored report below";
+  switchTab("jd");
+}
+
 // ── LISTENERS ─────────────────────────────────────────────────────────────────
 
 function setupListeners() {
@@ -435,11 +521,8 @@ function setupListeners() {
   document.getElementById("btnDlResume").addEventListener("click", downloadResume);
   document.getElementById("btnPreview").addEventListener("click", previewResume);
   document.getElementById("btnAutofill").addEventListener("click", autofill);
-  document.getElementById("btnNew").addEventListener("click", () => {
-    switchTab("jd");
-    document.getElementById("jdInput").value = "";
-    document.getElementById("charCount").textContent = "0";
-  });
+  document.getElementById("btnNew").addEventListener("click", () => resetToNewAnalysis());
+  document.getElementById("btnClearSession").addEventListener("click", () => resetToNewAnalysis());
   document.getElementById("btnLoadModels").addEventListener("click", async () => {
     const r = await bg({ action: "checkOllama" });
     if (r?.online && r.models?.length) populateModels(r.models);
