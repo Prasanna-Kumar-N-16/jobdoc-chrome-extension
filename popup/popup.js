@@ -88,13 +88,18 @@ async function checkOllama() {
   dot.className = "dot";
   lbl.textContent = "checking…";
 
-  const r = await bg({ action: "checkOllama" });
-  if (r?.online) {
-    dot.className = "dot on";
-    lbl.textContent = "Ollama online";
-    hideCors();
-    if (r.models?.length) populateModels(r.models);
-  } else {
+  try {
+    const r = await bg({ action: "checkOllama" });
+    if (r?.online) {
+      dot.className = "dot on";
+      lbl.textContent = "Ollama online";
+      hideCors();
+      if (r.models?.length) populateModels(r.models);
+    } else {
+      dot.className = "dot off";
+      lbl.textContent = "Ollama offline";
+    }
+  } catch (e) {
     dot.className = "dot off";
     lbl.textContent = "Ollama offline";
   }
@@ -136,14 +141,18 @@ function copyCmd(el) {
   });
 }
 async function recheckCors() {
-  const r = await bg({ action: "checkOllama" });
-  if (r?.online) {
-    hideCors();
-    document.getElementById("dot").className = "dot on";
-    document.getElementById("statusLbl").textContent = "Ollama online";
-    if (r.models?.length) populateModels(r.models);
-  } else {
-    document.getElementById("cmdNote").textContent = "⚠ Still not reachable. Make sure Ollama restarted, then try again.";
+  try {
+    const r = await bg({ action: "checkOllama" });
+    if (r?.online) {
+      hideCors();
+      document.getElementById("dot").className = "dot on";
+      document.getElementById("statusLbl").textContent = "Ollama online";
+      if (r.models?.length) populateModels(r.models);
+    } else {
+      document.getElementById("cmdNote").textContent = "⚠ Still not reachable. Make sure Ollama restarted, then try again.";
+    }
+  } catch (e) {
+    if (!isPortClosedError(e)) document.getElementById("cmdNote").textContent = "⚠ " + (e?.message || "Check failed");
   }
 }
 
@@ -169,18 +178,18 @@ async function analyze() {
   // Show progress
   showProgress("Connecting to Ollama…");
 
-  // Check Ollama first
-  const status = await bg({ action: "checkOllama" });
-  if (!status?.online) {
-    hideProgress();
-    showCors();
-    return;
-  }
-
-  setProgressMsg("Sending to Ollama — this takes 30–90s…");
-  document.getElementById("streamPreview").style.display = "block";
-
   try {
+    // Check Ollama first
+    const status = await bg({ action: "checkOllama" });
+    if (!status?.online) {
+      hideProgress();
+      showCors();
+      return;
+    }
+
+    setProgressMsg("Sending to Ollama — this takes 30–90s…");
+    document.getElementById("streamPreview").style.display = "block";
+
     const result = await bg({
       action: "fullAnalysis",
       jd,
@@ -221,7 +230,7 @@ async function analyze() {
 
   } catch (e) {
     hideProgress();
-    showErr(e.message);
+    if (!isPortClosedError(e)) showErr(e.message);
   }
 }
 
@@ -424,13 +433,21 @@ async function downloadReport() {
 ${markdownToHTML(lastRawReport)}
 </body></html>`;
 
-  await bg({ action: "download", content: html, filename: `ATS_Report_${settings.firstName}_${settings.lastName}.html`, mime: "text/html" });
+  try {
+    await bg({ action: "download", content: html, filename: `ATS_Report_${settings.firstName}_${settings.lastName}.html`, mime: "text/html" });
+  } catch (e) {
+    if (!isPortClosedError(e)) showErr(e.message);
+  }
 }
 
 async function downloadResume() {
   if (!lastResumeHTML) return;
   const settings = await chrome.storage.local.get(["firstName","lastName"]);
-  await bg({ action: "download", content: lastResumeHTML, filename: `Resume_${settings.firstName}_${settings.lastName}.html`, mime: "text/html" });
+  try {
+    await bg({ action: "download", content: lastResumeHTML, filename: `Resume_${settings.firstName}_${settings.lastName}.html`, mime: "text/html" });
+  } catch (e) {
+    if (!isPortClosedError(e)) showErr(e.message);
+  }
 }
 
 function previewResume() {
@@ -443,9 +460,13 @@ async function autofill() {
   const settings = await chrome.storage.local.get(["firstName","lastName","email","phone","location","linkedin","website"]);
   settings.coverLetter = lastCoverLetter;
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  const r = await bg({ action: "autofillTab", tabId: tab.id, profile: settings });
-  const msg = r?.success ? `✓ Filled ${r.result?.filled || 0} fields` : `⚠ ${r?.error || "Partial fill"}`;
-  document.getElementById("scoreSub").textContent = msg;
+  try {
+    const r = await bg({ action: "autofillTab", tabId: tab.id, profile: settings });
+    const msg = r?.success ? `✓ Filled ${r.result?.filled || 0} fields` : `⚠ ${r?.error || "Partial fill"}`;
+    document.getElementById("scoreSub").textContent = msg;
+  } catch (e) {
+    if (!isPortClosedError(e)) document.getElementById("scoreSub").textContent = "⚠ " + (e?.message || "Autofill failed");
+  }
 }
 
 // ── SETTINGS ─────────────────────────────────────────────────────────────────
@@ -570,9 +591,13 @@ function setupListeners() {
   document.getElementById("btnClearSession").addEventListener("click", () => resetToNewAnalysis());
   document.getElementById("btnCancelAnalysis").addEventListener("click", cancelAnalysis);
   document.getElementById("btnLoadModels").addEventListener("click", async () => {
-    const r = await bg({ action: "checkOllama" });
-    if (r?.online && r.models?.length) populateModels(r.models);
-    else showToast("toastErr", "Ollama offline or no models found.");
+    try {
+      const r = await bg({ action: "checkOllama" });
+      if (r?.online && r.models?.length) populateModels(r.models);
+      else showToast("toastErr", "Ollama offline or no models found.");
+    } catch (e) {
+      if (!isPortClosedError(e)) showToast("toastErr", e?.message || "Failed to load models");
+    }
   });
 
   // char counter
@@ -583,11 +608,24 @@ function setupListeners() {
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
 
+/** True when the popup/context closed before the background responded (no need to show error). */
+function isPortClosedError(e) {
+  return e?.code === "PORT_CLOSED" || e?.message?.includes("message port closed");
+}
+
 function bg(msg) {
   return new Promise((res, rej) => {
     chrome.runtime.sendMessage(msg, r => {
-      if (chrome.runtime.lastError) rej(new Error(chrome.runtime.lastError.message));
-      else res(r);
+      const err = chrome.runtime.lastError;
+      if (err) {
+        const e = new Error(err.message);
+        if (err.message && err.message.includes("message port closed")) {
+          e.code = "PORT_CLOSED";
+        }
+        rej(e);
+      } else {
+        res(r);
+      }
     });
   });
 }
@@ -641,7 +679,7 @@ async function cancelAnalysis() {
     }
   } catch (e) {
     hideProgress();
-    showErr(e.message);
+    if (!isPortClosedError(e)) showErr(e.message);
   } finally {
     cancelBtn.disabled = false;
   }
