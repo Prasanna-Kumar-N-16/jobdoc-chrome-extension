@@ -30,6 +30,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   setupListeners();
   checkOllama();
   await restoreLastSession(); // Restore previous results if they exist
+  await checkActiveAnalysis(); // Re-attach loader if something is running in background
 });
 
 async function restoreLastSession() {
@@ -229,6 +230,7 @@ async function analyze() {
 function showProgress(msg) {
   const btn = document.getElementById("btnAnalyze");
   const jdInput = document.getElementById("jdInput");
+  const cancelBtn = document.getElementById("btnCancelAnalysis");
 
   // Remember original label once, then show a clear loading state
   if (!btn.dataset.originalLabel) {
@@ -251,12 +253,17 @@ function showProgress(msg) {
   preview.textContent = "";
   preview.style.display = "none";
 
+  if (cancelBtn) {
+    cancelBtn.disabled = false;
+  }
+
   // Make sure the loader is visible even on smaller popup heights
   box.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 function hideProgress() {
   const btn = document.getElementById("btnAnalyze");
   const jdInput = document.getElementById("jdInput");
+  const cancelBtn = document.getElementById("btnCancelAnalysis");
 
   btn.disabled = false;
   btn.removeAttribute("aria-busy");
@@ -269,6 +276,10 @@ function hideProgress() {
   }
 
   document.getElementById("progressBox").style.display = "none";
+
+  if (cancelBtn) {
+    cancelBtn.disabled = false;
+  }
 }
 function setProgressMsg(msg) {
   document.getElementById("progressMsg").textContent = msg;
@@ -557,6 +568,7 @@ function setupListeners() {
   document.getElementById("btnAutofill").addEventListener("click", autofill);
   document.getElementById("btnNew").addEventListener("click", () => resetToNewAnalysis());
   document.getElementById("btnClearSession").addEventListener("click", () => resetToNewAnalysis());
+  document.getElementById("btnCancelAnalysis").addEventListener("click", cancelAnalysis);
   document.getElementById("btnLoadModels").addEventListener("click", async () => {
     const r = await bg({ action: "checkOllama" });
     if (r?.online && r.models?.length) populateModels(r.models);
@@ -594,4 +606,43 @@ function showToast(id, msg) {
 
 function showErr(msg) {
   alert("Error: " + (msg || "Unknown error"));
+}
+
+// ── ACTIVE ANALYSIS STATUS ────────────────────────────────────────────────────
+
+async function checkActiveAnalysis() {
+  try {
+    const status = await bg({ action: "getAnalysisStatus" });
+    if (status?.running) {
+      // There is an analysis running in the background; show loader again
+      showProgress("Resuming analysis with Ollama…");
+      const preview = document.getElementById("streamPreview");
+      if (preview) {
+        preview.style.display = "block";
+      }
+    }
+  } catch {
+    // Ignore status errors; not critical for UX
+  }
+}
+
+// ── CANCEL CURRENT ANALYSIS ───────────────────────────────────────────────────
+
+async function cancelAnalysis() {
+  const cancelBtn = document.getElementById("btnCancelAnalysis");
+  cancelBtn.disabled = true;
+  setProgressMsg("Cancelling current analysis…");
+  try {
+    const r = await bg({ action: "cancelAnalysis" });
+    hideProgress();
+    const sub = document.getElementById("scoreSub");
+    if (sub) {
+      sub.textContent = r?.cancelled ? "Generation cancelled." : "No active generation to cancel.";
+    }
+  } catch (e) {
+    hideProgress();
+    showErr(e.message);
+  } finally {
+    cancelBtn.disabled = false;
+  }
 }

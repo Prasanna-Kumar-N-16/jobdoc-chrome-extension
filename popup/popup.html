@@ -72,6 +72,9 @@ textarea:focus,input:focus,select:focus{border-color:var(--accent);}
 @keyframes spin{to{transform:rotate(360deg);}}
 .progress-msg{font-size:12px;color:var(--muted);font-family:'DM Mono',monospace;}
 .stream-preview{margin-top:12px;background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:10px;max-height:120px;overflow-y:auto;font-size:10.5px;color:#475569;text-align:left;line-height:1.5;font-family:'DM Mono',monospace;}
+.progress-actions{margin-top:10px;display:flex;justify-content:flex-end;}
+.btn-cancel{background:transparent;color:var(--red);border:1px solid rgba(248,113,113,.6);}
+.btn-cancel:hover:not(:disabled){background:rgba(248,113,113,.08);}
 
 /* Results */
 .results-panel{padding:0;overflow-y:auto;max-height:530px;}
@@ -168,6 +171,9 @@ textarea:focus,input:focus,select:focus{border-color:var(--accent);}
     <div class="spinner"></div>
     <div class="progress-msg" id="progressMsg">Connecting to Ollama…</div>
     <div class="stream-preview" id="streamPreview"></div>
+    <div class="progress-actions">
+      <button class="btn btn-cancel btn-sm" id="btnCancelAnalysis">✕ Cancel</button>
+    </div>
   </div>
 
 </div>

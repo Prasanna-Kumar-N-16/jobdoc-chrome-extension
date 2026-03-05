@@ -3,6 +3,9 @@
 const DEFAULT_BASE  = "http://localhost:11434";
 const DEFAULT_MODEL = "llama3";
 
+// Tracks the currently running analysis so we can cancel it
+let currentAnalysis = null;
+
 // ── CHECK OLLAMA ──────────────────────────────────────────────────────────────
 
 async function checkOllama() {
@@ -30,7 +33,7 @@ async function cfg() {
 // Uses streaming so we can forward tokens to popup in real time.
 // Returns the full accumulated text — never parses JSON.
 
-async function ollamaStream(systemPrompt, userPrompt, onToken) {
+async function ollamaStream(systemPrompt, userPrompt, onToken, signal) {
   const settings = await cfg();
   const base  = settings.ollamaUrl  || DEFAULT_BASE;
   const model = settings.ollamaModel || DEFAULT_MODEL;
@@ -38,6 +41,7 @@ async function ollamaStream(systemPrompt, userPrompt, onToken) {
   const res = await fetch(base + "/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    signal,
     body: JSON.stringify({
       model,
       stream: true,
@@ -257,25 +261,52 @@ Work Authorization: H1B Visa\n\n`;
 async function handleFullAnalysis(jd, profile, senderTabId) {
   const { system, user } = buildPrompt(jd, profile);
 
-  // Forward streaming tokens to popup
+  // Set up cancellable analysis
+  const controller = new AbortController();
+  currentAnalysis = {
+    controller,
+    startedAt: Date.now(),
+    jd,
+  };
+
+  // Forward streaming tokens to any open popup
   const onToken = (token) => {
     chrome.runtime.sendMessage({ action: "streamToken", token }).catch(() => {});
   };
 
-  const rawReport = await ollamaStream(system, user, onToken);
+  try {
+    const rawReport = await ollamaStream(system, user, onToken, controller.signal);
 
-  // Extract ATS score
-  let atsScore = 0;
-  const m = rawReport.match(/(?:ATS|overall)[^\d]*(\d{2,3})\s*(?:\/\s*100|%|out of)/i)
-          || rawReport.match(/score[^\d]*(\d{2,3})\s*\/\s*100/i)
-          || rawReport.match(/\b(\d{2,3})\s*\/\s*100\b/);
-  if (m) atsScore = Math.min(100, Math.max(0, parseInt(m[1])));
+    // Extract ATS score
+    let atsScore = 0;
+    const m = rawReport.match(/(?:ATS|overall)[^\d]*(\d{2,3})\s*(?:\/\s*100|%|out of)/i)
+            || rawReport.match(/score[^\d]*(\d{2,3})\s*\/\s*100/i)
+            || rawReport.match(/\b(\d{2,3})\s*\/\s*100\b/);
+    if (m) atsScore = Math.min(100, Math.max(0, parseInt(m[1])));
 
-  // Extract rewritten resume section and build HTML
-  const resumeSection = extractResumeSection(rawReport);
-  const resumeHTML = buildResumeHTML(profile, resumeSection);
+    // Extract rewritten resume section and build HTML
+    const resumeSection = extractResumeSection(rawReport);
+    const resumeHTML = buildResumeHTML(profile, resumeSection);
 
-  return { success: true, report: rawReport, atsScore, resumeHTML };
+    // Persist session so results are available even if popup was closed
+    await chrome.storage.local.set({
+      lastSession: {
+        report: rawReport,
+        resumeHTML,
+        coverLetter: "",
+        atsScore,
+        jd,
+        savedAt: Date.now(),
+      },
+    });
+
+    return { success: true, report: rawReport, atsScore, resumeHTML };
+  } finally {
+    // Clear current analysis marker when finished or cancelled
+    if (currentAnalysis && currentAnalysis.controller === controller) {
+      currentAnalysis = null;
+    }
+  }
 }
 
 // ── MESSAGE ROUTER ────────────────────────────────────────────────────────────
@@ -292,13 +323,38 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
       .then(sendResponse)
       .catch(e => {
         const msg = e.message || String(e);
-        if (msg === "403_CORS") {
+        if (e.name === "AbortError" || msg === "CANCELLED") {
+          sendResponse({ success: false, error: "CANCELLED" });
+        } else if (msg === "403_CORS") {
           sendResponse({ success: false, error: "403_CORS" });
         } else {
           sendResponse({ success: false, error: msg });
         }
       });
     return true; // async
+  }
+
+  if (req.action === "cancelAnalysis") {
+    if (currentAnalysis?.controller) {
+      currentAnalysis.controller.abort();
+      currentAnalysis = null;
+      sendResponse({ cancelled: true });
+    } else {
+      sendResponse({ cancelled: false });
+    }
+    return true;
+  }
+
+  if (req.action === "getAnalysisStatus") {
+    if (currentAnalysis) {
+      sendResponse({
+        running: true,
+        startedAt: currentAnalysis.startedAt,
+      });
+    } else {
+      sendResponse({ running: false });
+    }
+    return true;
   }
 
   if (req.action === "download") {
