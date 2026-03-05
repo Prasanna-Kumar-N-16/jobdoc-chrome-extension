@@ -227,13 +227,47 @@ async function analyze() {
 // ── PROGRESS ─────────────────────────────────────────────────────────────────
 
 function showProgress(msg) {
-  document.getElementById("btnAnalyze").disabled = true;
-  document.getElementById("progressBox").style.display = "block";
+  const btn = document.getElementById("btnAnalyze");
+  const jdInput = document.getElementById("jdInput");
+
+  // Remember original label once, then show a clear loading state
+  if (!btn.dataset.originalLabel) {
+    btn.dataset.originalLabel = btn.textContent;
+  }
+
+  btn.disabled = true;
+  btn.setAttribute("aria-busy", "true");
+  btn.textContent = "Analyzing job description…";
+
+  if (jdInput) {
+    jdInput.readOnly = true;
+  }
+
+  const box = document.getElementById("progressBox");
+  const preview = document.getElementById("streamPreview");
+
+  box.style.display = "block";
   document.getElementById("progressMsg").textContent = msg;
-  document.getElementById("streamPreview").textContent = "";
+  preview.textContent = "";
+  preview.style.display = "none";
+
+  // Make sure the loader is visible even on smaller popup heights
+  box.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 function hideProgress() {
-  document.getElementById("btnAnalyze").disabled = false;
+  const btn = document.getElementById("btnAnalyze");
+  const jdInput = document.getElementById("jdInput");
+
+  btn.disabled = false;
+  btn.removeAttribute("aria-busy");
+  if (btn.dataset.originalLabel) {
+    btn.textContent = btn.dataset.originalLabel;
+  }
+
+  if (jdInput) {
+    jdInput.readOnly = false;
+  }
+
   document.getElementById("progressBox").style.display = "none";
 }
 function setProgressMsg(msg) {
