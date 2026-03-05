@@ -358,10 +358,9 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
   }
 
   if (req.action === "download") {
-    const blob = new Blob([req.content], { type: req.mime });
-    const url = URL.createObjectURL(blob);
+    const mime = req.mime || "text/plain";
+    const url = `data:${mime};charset=utf-8,` + encodeURIComponent(req.content || "");
     chrome.downloads.download({ url, filename: req.filename, saveAs: true }, () => {
-      URL.revokeObjectURL(url);
       sendResponse({ success: true });
     });
     return true;
