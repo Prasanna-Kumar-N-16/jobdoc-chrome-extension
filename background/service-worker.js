@@ -25,7 +25,7 @@ async function checkOllama() {
 async function cfg() {
   return chrome.storage.local.get([
     "ollamaUrl","ollamaModel",
-    "firstName","lastName","email","phone","location","linkedin","website","resumeData"
+    "firstName","lastName","email","phone","location","linkedin","website","github","portfolio","resumeData"
   ]);
 }
 
@@ -106,38 +106,161 @@ function extractResumeSection(rawReport) {
 
 function buildResumeHTML(profile, resumeSection) {
   const today = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+  let workAuth = "H1B Visa";
+  try {
+    const rd = typeof profile.resumeData === "string" ? JSON.parse(profile.resumeData) : (profile.resumeData || {});
+    if (rd.workAuthorization) workAuth = rd.workAuthorization;
+  } catch (_) {}
+
+  // Contact line: Phone | Email | LinkedIn | GitHub | Portfolio | Work Auth (with hyperlinks)
+  const contactParts = [];
+  if (profile.phone) contactParts.push(escapeHtml(profile.phone));
+  if (profile.email) contactParts.push(`<a href="mailto:${escapeHtml(profile.email)}">${escapeHtml(profile.email)}</a>`);
+  if (profile.linkedin) contactParts.push(`<a href="${escapeHtml(profile.linkedin)}">LinkedIn</a>`);
+  if (profile.github) contactParts.push(`<a href="${escapeHtml(profile.github)}">GitHub</a>`);
+  if (profile.portfolio || profile.website) contactParts.push(`<a href="${escapeHtml(profile.portfolio || profile.website)}">Portfolio</a>`);
+  contactParts.push(`Work Auth: ${escapeHtml(workAuth)}`);
+  const contactLine = contactParts.join(" | ");
+
   const body = resumeSection
-    ? `<div style="white-space:pre-wrap;font-size:10pt;line-height:1.6">${escapeHtml(resumeSection)}</div>`
-    : "<p>Resume content was generated — see the full report for section-by-section rewrites.</p>";
+    ? formatResumeBody(resumeSection)
+    : buildResumeBodyFromProfile(profile);
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>${profile.firstName} ${profile.lastName} — Resume</title>
+<meta name="description" content="Resume — ${escapeHtml(profile.firstName)} ${escapeHtml(profile.lastName)}">
+<title>${escapeHtml(profile.firstName)} ${escapeHtml(profile.lastName)} — Resume</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box;}
-  body{font-family:'Georgia',serif;font-size:10.5pt;color:#1a1a1a;max-width:8.5in;margin:0 auto;padding:.65in;}
-  h1{font-size:20pt;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#0f172a;}
-  .contact{font-size:9pt;color:#475569;margin:5px 0 14px;display:flex;gap:14px;flex-wrap:wrap;}
-  .contact a{color:#2563eb;text-decoration:none;}
-  h2{font-size:9.5pt;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#0f172a;border-bottom:1.5px solid #0f172a;padding-bottom:2px;margin:16px 0 7px;}
+  body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;font-size:10.5pt;color:#1a1a1a;max-width:8.5in;margin:0 auto;padding:.6in;line-height:1.45;}
+  .resume-header{text-align:center;margin-bottom:14px;}
+  .resume-name{font-size:18pt;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#0f172a;}
+  .resume-contact{font-size:9.5pt;color:#475569;margin-top:4px;}
+  .resume-contact a{color:#2563eb;text-decoration:none;}
+  .resume-contact a:hover{text-decoration:underline;}
+  .resume-section{margin-top:14px;}
+  .resume-section h2{font-size:10pt;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#0f172a;border-bottom:1.5px solid #0f172a;padding-bottom:2px;margin-bottom:6px;}
+  .resume-section p{margin-bottom:6px;}
+  .resume-section ul{margin:4px 0 10px 18px;}
+  .resume-section li{margin-bottom:3px;}
+  .job-title{font-weight:700;}
+  .job-meta{font-size:9.5pt;color:#475569;}
+  .generated{margin-top:18px;font-size:8pt;color:#94a3b8;text-align:right;}
   @media print{body{padding:.5in;}}
 </style>
 </head>
 <body>
-  <h1>${profile.firstName} ${profile.lastName}</h1>
-  <div class="contact">
-    ${profile.email    ? `<span>✉ <a href="mailto:${profile.email}">${profile.email}</a></span>` : ""}
-    ${profile.phone    ? `<span>☎ ${profile.phone}</span>` : ""}
-    ${profile.location ? `<span>📍 ${profile.location}</span>` : ""}
-    ${profile.linkedin ? `<span>🔗 <a href="${profile.linkedin}">${profile.linkedin.replace("https://","")}</a></span>` : ""}
-    ${profile.website  ? `<span>🌐 <a href="${profile.website}">${profile.website.replace("https://","")}</a></span>` : ""}
-  </div>
-  ${body}
-  <p style="margin-top:20px;font-size:8pt;color:#94a3b8;text-align:right">Generated ${today}</p>
+  <header class="resume-header">
+    <h1 class="resume-name">${escapeHtml(profile.firstName)} ${escapeHtml(profile.lastName)}</h1>
+    <div class="resume-contact">${contactLine}</div>
+  </header>
+  <main>${body}</main>
+  <p class="generated">Generated ${today}</p>
 </body>
 </html>`;
+}
+
+function formatResumeBody(raw) {
+  const lines = raw.split(/\r?\n/);
+  const sections = [];
+  let i = 0;
+  const sectionHeadings = /^(PROFESSIONAL SUMMARY|SUMMARY|EXPERIENCE|PROFESSIONAL EXPERIENCE|TECHNICAL SKILLS|SKILLS|EDUCATION|CERTIFICATIONS|PROJECTS|ADDITIONAL)/i;
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (!trimmed) { i++; continue; }
+    if (sectionHeadings.test(trimmed)) {
+      const heading = trimmed;
+      const block = [];
+      i++;
+      while (i < lines.length) {
+        const t = lines[i].trim();
+        if (t === "" || sectionHeadings.test(t)) break;
+        block.push(lines[i]);
+        i++;
+      }
+      const content = formatSectionContent(block.join("\n"));
+      sections.push(`<div class="resume-section"><h2>${escapeHtml(heading)}</h2>${content}</div>`);
+      continue;
+    }
+    const block = [];
+    while (i < lines.length) {
+      const t = lines[i].trim();
+      if (t === "" || sectionHeadings.test(t)) break;
+      block.push(lines[i]);
+      i++;
+    }
+    if (block.length) {
+      const content = formatSectionContent(block.join("\n"));
+      sections.push(`<div class="resume-section">${content}</div>`);
+    }
+  }
+  if (sections.length === 0) {
+    return `<div class="resume-section" style="white-space:pre-wrap">${escapeHtml(raw)}</div>`;
+  }
+  return sections.join("\n");
+}
+
+function formatSectionContent(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  const items = [];
+  let inList = false;
+  let listItems = [];
+  const flushList = () => {
+    if (listItems.length) {
+      items.push("<ul>" + listItems.map(li => "<li>" + escapeHtml(li.replace(/^[\s•\-*]+\s*/, "").trim()) + "</li>").join("") + "</ul>");
+      listItems = [];
+    }
+    inList = false;
+  };
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^[•\-*]\s+/.test(trimmed) || (trimmed.startsWith("•") || trimmed.startsWith("-"))) {
+      if (!inList) flushList();
+      inList = true;
+      listItems.push(trimmed);
+    } else {
+      flushList();
+      if (trimmed) items.push("<p>" + escapeHtml(trimmed) + "</p>");
+    }
+  }
+  flushList();
+  return items.join("");
+}
+
+function buildResumeBodyFromProfile(profile) {
+  let html = "";
+  try {
+    const rd = typeof profile.resumeData === "string" ? JSON.parse(profile.resumeData) : (profile.resumeData || {});
+    if (rd.experience?.length) {
+      html += '<div class="resume-section"><h2>Professional Experience</h2>';
+      for (const job of rd.experience) {
+        html += `<p class="job-title">${escapeHtml(job.company)} | ${escapeHtml(job.title)}</p>`;
+        html += `<p class="job-meta">${escapeHtml(job.location || "")} | ${escapeHtml(job.dates || "")}</p><ul>`;
+        (job.bullets || []).forEach(b => { html += `<li>${escapeHtml(b)}</li>`; });
+        html += "</ul>";
+      }
+      html += "</div>";
+    }
+    if (rd.skills?.length) {
+      html += `<div class="resume-section"><h2>Technical Skills</h2><p>${escapeHtml(rd.skills.join(", "))}</p></div>`;
+    }
+    if (rd.education?.length) {
+      html += '<div class="resume-section"><h2>Education</h2>';
+      for (const e of rd.education) {
+        html += `<p><strong>${escapeHtml(e.school)}</strong> — ${escapeHtml(e.degree)} ${escapeHtml(e.field || "")} (${escapeHtml(e.year || "")})</p>`;
+      }
+      html += "</div>";
+    }
+    if (rd.certifications?.length) {
+      html += `<div class="resume-section"><h2>Certifications</h2><ul>`;
+      rd.certifications.forEach(c => { html += `<li>${escapeHtml(c)}</li>`; });
+      html += "</ul></div>";
+    }
+  } catch (_) {}
+  return html || "<p>Resume content generated — see the full report for section-by-section rewrites.</p>";
 }
 
 function escapeHtml(t) {
@@ -211,7 +334,7 @@ ${jd}`;
 function buildResumeText(profile) {
   let text = `Name: ${profile.firstName} ${profile.lastName}
 Email: ${profile.email || ""} | Phone: ${profile.phone || ""} | Location: ${profile.location || ""}
-LinkedIn: ${profile.linkedin || ""} | Website: ${profile.website || ""}
+LinkedIn: ${profile.linkedin || ""} | GitHub: ${profile.github || ""} | Portfolio: ${profile.portfolio || profile.website || ""}
 Work Authorization: H1B Visa\n\n`;
 
   try {
@@ -271,7 +394,9 @@ async function handleFullAnalysis(jd, profile, senderTabId) {
 
   // Forward streaming tokens to any open popup
   const onToken = (token) => {
-    chrome.runtime.sendMessage({ action: "streamToken", token }).catch(() => {});
+    chrome.runtime.sendMessage({ action: "streamToken", token }, () => {
+      if (chrome.runtime.lastError) { /* Popup closed or not open — ignore */ }
+    });
   };
 
   try {
@@ -367,10 +492,18 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
   }
 
   if (req.action === "autofillTab") {
-    chrome.tabs.sendMessage(req.tabId, { action: "autofill", profile: req.profile }, r => {
+    chrome.tabs.sendMessage(req.tabId, { action: "autofill", profile: req.profile }, (r) => {
+      if (chrome.runtime.lastError) {
+        const msg = chrome.runtime.lastError.message || "";
+        const friendly = msg.includes("Receiving end") || msg.includes("receiving end")
+          ? "Open a job application page (e.g. LinkedIn, Greenhouse), then click Autofill again."
+          : msg;
+        sendResponse({ success: false, error: friendly });
+        return;
+      }
       sendResponse(r || { success: false, error: "No response from page" });
     });
-    return true;
+    return true; // keep channel open for async callback
   }
 
   return true;

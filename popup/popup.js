@@ -166,7 +166,7 @@ async function analyze() {
   }
 
   const settings = await chrome.storage.local.get([
-    "firstName","lastName","email","phone","location","linkedin","website","resumeData","ollamaUrl","ollamaModel"
+    "firstName","lastName","email","phone","location","linkedin","website","github","portfolio","resumeData","ollamaUrl","ollamaModel"
   ]);
 
   if (!settings.firstName) {
@@ -457,8 +457,10 @@ function previewResume() {
 }
 
 async function autofill() {
-  const settings = await chrome.storage.local.get(["firstName","lastName","email","phone","location","linkedin","website"]);
+  const settings = await chrome.storage.local.get(["firstName","lastName","email","phone","location","linkedin","website","github","portfolio"]);
   settings.coverLetter = lastCoverLetter;
+  // Prefer portfolio for "website" when present
+  if (!settings.website && settings.portfolio) settings.website = settings.portfolio;
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   try {
     const r = await bg({ action: "autofillTab", tabId: tab.id, profile: settings });
@@ -473,7 +475,7 @@ async function autofill() {
 
 async function loadSettings() {
   const d = await chrome.storage.local.get([
-    "firstName","lastName","email","phone","location","linkedin","website","resumeData","ollamaUrl","ollamaModel"
+    "firstName","lastName","email","phone","location","linkedin","website","github","portfolio","resumeData","ollamaUrl","ollamaModel"
   ]);
   setValue("sFirst",   d.firstName || "");
   setValue("sLast",    d.lastName  || "");
@@ -481,7 +483,8 @@ async function loadSettings() {
   setValue("sPhone",   d.phone     || "");
   setValue("sLoc",     d.location  || "");
   setValue("sLinkedin",d.linkedin  || "");
-  setValue("sWebsite", d.website   || "");
+  setValue("sGithub",  d.github    || "");
+  setValue("sPortfolio", d.portfolio || d.website || "");
   setValue("sUrl",     d.ollamaUrl || "http://localhost:11434");
   try {
     setValue("sResume", d.resumeData ? JSON.stringify(JSON.parse(d.resumeData), null, 2) : "");
@@ -512,7 +515,9 @@ async function saveSettings() {
     phone:      document.getElementById("sPhone").value.trim(),
     location:   document.getElementById("sLoc").value.trim(),
     linkedin:   document.getElementById("sLinkedin").value.trim(),
-    website:    document.getElementById("sWebsite").value.trim(),
+    github:     document.getElementById("sGithub").value.trim(),
+    portfolio:  document.getElementById("sPortfolio").value.trim(),
+    website:    document.getElementById("sPortfolio").value.trim(),
     resumeData: resumeRaw,
     ollamaUrl:  document.getElementById("sUrl").value.trim() || "http://localhost:11434",
     ollamaModel:document.getElementById("sModel").value,
@@ -525,7 +530,8 @@ async function resetToDefaults() {
     firstName: DEFAULT_PROFILE.firstName, lastName: DEFAULT_PROFILE.lastName,
     email: DEFAULT_PROFILE.email, phone: DEFAULT_PROFILE.phone,
     location: DEFAULT_PROFILE.location, linkedin: DEFAULT_PROFILE.linkedin,
-    website: DEFAULT_PROFILE.website, resumeData: DEFAULT_PROFILE.resumeData,
+    website: DEFAULT_PROFILE.website, github: DEFAULT_PROFILE.github,
+    portfolio: DEFAULT_PROFILE.portfolio, resumeData: DEFAULT_PROFILE.resumeData,
   });
   await loadSettings();
   showToast("toastOk", "✓ Reset to your resume defaults!");
@@ -550,7 +556,8 @@ async function seedIfEmpty() {
     firstName: DEFAULT_PROFILE.firstName, lastName: DEFAULT_PROFILE.lastName,
     email: DEFAULT_PROFILE.email, phone: DEFAULT_PROFILE.phone,
     location: DEFAULT_PROFILE.location, linkedin: DEFAULT_PROFILE.linkedin,
-    website: DEFAULT_PROFILE.website, resumeData: DEFAULT_PROFILE.resumeData,
+    website: DEFAULT_PROFILE.website, github: DEFAULT_PROFILE.github,
+    portfolio: DEFAULT_PROFILE.portfolio, resumeData: DEFAULT_PROFILE.resumeData,
     ollamaUrl: "http://localhost:11434", ollamaModel: "llama3",
   });
 }

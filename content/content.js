@@ -210,7 +210,8 @@
       { targets: ["email", "email_address", "emailAddress"], value: profile.email },
       { targets: ["phone", "phone_number", "phoneNumber", "mobile"], value: profile.phone },
       { targets: ["linkedin", "linkedin_url", "linkedinUrl"], value: profile.linkedin },
-      { targets: ["website", "portfolio", "personal_website"], value: profile.website },
+      { targets: ["website", "portfolio", "personal_website"], value: profile.website || profile.portfolio },
+      { targets: ["github", "github_url", "githubUrl"], value: profile.github },
       { targets: ["address", "city", "location"], value: profile.location },
     ];
 
@@ -277,7 +278,8 @@
       "#email, input[name='email']": profile.email,
       "#phone, input[name='phone']": profile.phone,
       "input[name='urls[LinkedIn]']": profile.linkedin,
-      "input[name='urls[Portfolio]'], input[name='urls[Website]']": profile.website,
+      "input[name='urls[Portfolio]'], input[name='urls[Website]']": profile.website || profile.portfolio,
+      "input[name='urls[GitHub]']": profile.github,
       "textarea[name='comments']": profile.coverLetter,
     };
     let filled = 0;

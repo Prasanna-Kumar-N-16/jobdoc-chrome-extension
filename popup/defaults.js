@@ -9,6 +9,8 @@ const DEFAULT_PROFILE = {
   location: "Plano, TX",
   linkedin: "https://linkedin.com/in/prasannakumar-nagaboyina",
   website: "https://github.com/prasannakumar-nagaboyina",
+  github: "https://github.com/prasannakumar-nagaboyina",
+  portfolio: "",
   coverLetterTemplate: "Professional and confident tone. Emphasize Golang expertise, cloud-native architecture, and measurable impact metrics. Mention H1B visa work authorization. Highlight distributed systems experience and team mentorship. Lead with the most impressive metric relevant to the role.",
 
   resumeData: JSON.stringify({
