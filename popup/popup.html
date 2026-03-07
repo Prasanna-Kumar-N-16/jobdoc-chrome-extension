@@ -5,16 +5,9 @@
 <title>AI Job Applicant</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=DM+Mono:wght@400;500&display=swap');
-
-:root {
-  --bg:#0d0f14; --s1:#161920; --s2:#1e2130; --border:#2a2f42;
-  --accent:#6366f1; --a2:#818cf8; --green:#34d399;
-  --red:#f87171; --yellow:#fbbf24; --text:#e2e8f0; --muted:#64748b; --r:10px;
-}
+:root{--bg:#0d0f14;--s1:#161920;--s2:#1e2130;--border:#2a2f42;--accent:#6366f1;--a2:#818cf8;--green:#34d399;--red:#f87171;--yellow:#fbbf24;--text:#e2e8f0;--muted:#64748b;--r:10px;}
 *{margin:0;padding:0;box-sizing:border-box;}
 body{width:480px;min-height:580px;background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;}
-
-/* Header */
 .hdr{padding:13px 16px;background:var(--s1);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
 .logo{display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px;letter-spacing:-.3px;}
 .logo-icon{width:28px;height:28px;border-radius:7px;background:linear-gradient(135deg,#6366f1,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:13px;}
@@ -25,26 +18,18 @@ body{width:480px;min-height:580px;background:var(--bg);color:var(--text);font-fa
 .dot.off{background:var(--red);}
 .icon-btn{width:28px;height:28px;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;transition:.15s;}
 .icon-btn:hover{background:var(--s2);color:var(--text);}
-
-/* Tabs */
 .tabs{display:flex;gap:2px;background:var(--s1);border-bottom:1px solid var(--border);padding:0 12px;}
 .tab{padding:9px 12px;font-size:12px;font-weight:500;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:.15s;}
 .tab:hover{color:var(--text);}
 .tab.active{color:var(--a2);border-bottom-color:var(--accent);}
-
-/* Panels */
 .panel{display:none;}
 .panel.active{display:flex;flex-direction:column;}
-
-/* JD panel */
 .jd-panel{padding:14px;gap:10px;}
 .field-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:5px;}
 textarea,input,select{width:100%;background:var(--s1);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:12.5px;padding:9px 11px;outline:none;transition:.15s;resize:vertical;}
 textarea:focus,input:focus,select:focus{border-color:var(--accent);}
 #jdInput{min-height:220px;line-height:1.5;}
 .char-count{font-size:10px;color:var(--muted);text-align:right;margin-top:3px;}
-
-/* Buttons */
 .btn{padding:10px 16px;border-radius:8px;border:none;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:7px;transition:.15s;}
 .btn:disabled{opacity:.35;cursor:not-allowed;}
 .btn-primary{background:var(--accent);color:#fff;}
@@ -53,9 +38,13 @@ textarea:focus,input:focus,select:focus{border-color:var(--accent);}
 .btn-secondary:hover:not(:disabled){border-color:var(--accent);}
 .btn-green{background:rgba(52,211,153,.12);color:var(--green);border:1px solid rgba(52,211,153,.25);}
 .btn-green:hover:not(:disabled){background:rgba(52,211,153,.2);}
+.btn-yellow{background:rgba(251,191,36,.13);color:var(--yellow);border:1px solid rgba(251,191,36,.32);}
+.btn-yellow:hover:not(:disabled){background:rgba(251,191,36,.22);}
+.btn-indigo{background:linear-gradient(135deg,rgba(99,102,241,.18),rgba(167,139,250,.12));color:var(--a2);border:1px solid rgba(99,102,241,.4);font-weight:600;}
+.btn-indigo:hover:not(:disabled){background:linear-gradient(135deg,rgba(99,102,241,.28),rgba(167,139,250,.2));border-color:var(--accent);}
 .btn-sm{padding:7px 12px;font-size:12px;}
-
-/* CORS wizard */
+.btn-cancel{background:transparent;color:var(--red);border:1px solid rgba(248,113,113,.6);}
+.btn-cancel:hover:not(:disabled){background:rgba(248,113,113,.08);}
 .cors-box{background:#1a0f0f;border:1px solid #f8717133;border-radius:var(--r);overflow:hidden;}
 .cors-head{padding:10px 13px;background:rgba(248,113,113,.08);font-size:12px;color:var(--red);font-weight:500;}
 .cors-body{padding:12px 13px;}
@@ -65,18 +54,12 @@ textarea:focus,input:focus,select:focus{border-color:var(--accent);}
 .cmd-block{background:#0d0f14;border:1px solid var(--border);border-radius:6px;padding:9px 11px;font-family:'DM Mono',monospace;font-size:10.5px;color:#a5b4fc;line-height:1.9;white-space:pre;overflow-x:auto;cursor:pointer;position:relative;margin-bottom:8px;}
 .cmd-block::after{content:'click to copy';position:absolute;top:6px;right:8px;font-size:9px;color:var(--muted);font-family:'DM Sans',sans-serif;}
 .cmd-block.copied::after{content:'✓ copied!';color:var(--green);}
-
-/* Progress */
 .progress-box{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:22px 16px;text-align:center;}
 .spinner{width:34px;height:34px;margin:0 auto 12px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg);}}
 .progress-msg{font-size:12px;color:var(--muted);font-family:'DM Mono',monospace;}
 .stream-preview{margin-top:12px;background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:10px;max-height:120px;overflow-y:auto;font-size:10.5px;color:#475569;text-align:left;line-height:1.5;font-family:'DM Mono',monospace;}
 .progress-actions{margin-top:10px;display:flex;justify-content:flex-end;}
-.btn-cancel{background:transparent;color:var(--red);border:1px solid rgba(248,113,113,.6);}
-.btn-cancel:hover:not(:disabled){background:rgba(248,113,113,.08);}
-
-/* Results */
 .results-panel{padding:0;overflow-y:auto;max-height:530px;}
 .score-header{background:linear-gradient(135deg,#1e1b4b,#1e2130);border-bottom:1px solid var(--border);padding:16px;display:flex;align-items:center;gap:16px;}
 .big-score{font-size:42px;font-weight:700;font-family:'DM Mono',monospace;line-height:1;}
@@ -85,7 +68,7 @@ textarea:focus,input:focus,select:focus{border-color:var(--accent);}
 .score-sub{font-size:11px;color:var(--muted);}
 .score-bar-track{height:6px;background:var(--s2);border-radius:3px;overflow:hidden;margin-top:8px;}
 .score-bar-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--accent),var(--green));transition:width 1s cubic-bezier(.34,1.56,.64,1);width:0;}
-.result-actions{display:flex;gap:7px;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--s1);flex-wrap:wrap;}
+.result-actions{display:flex;gap:6px;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--s1);flex-wrap:wrap;}
 .report-content{padding:14px 16px;font-size:12.5px;line-height:1.65;color:#cbd5e1;}
 .report-content h2{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--a2);margin:18px 0 8px;padding-bottom:5px;border-bottom:1px solid var(--border);}
 .report-content h2:first-child{margin-top:0;}
@@ -102,8 +85,8 @@ textarea:focus,input:focus,select:focus{border-color:var(--accent);}
 .badge-g{background:rgba(52,211,153,.12);color:var(--green);border:1px solid rgba(52,211,153,.25);}
 .badge-r{background:rgba(248,113,113,.12);color:var(--red);border:1px solid rgba(248,113,113,.25);}
 .badge-y{background:rgba(251,191,36,.12);color:var(--yellow);border:1px solid rgba(251,191,36,.25);}
-
-/* Settings */
+.session-banner{display:none;align-items:center;justify-content:space-between;padding:8px 14px;background:rgba(99,102,241,.08);border-bottom:1px solid rgba(99,102,241,.2);}
+.session-banner.visible{display:flex;}
 .settings-panel{padding:14px;gap:10px;overflow-y:auto;max-height:530px;}
 .form-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
 .field{display:flex;flex-direction:column;gap:4px;}
@@ -123,7 +106,6 @@ textarea:focus,input:focus,select:focus{border-color:var(--accent);}
 </style>
 </head>
 <body>
-
 <div class="hdr">
   <div class="logo"><div class="logo-icon">✦</div>AI Job Applicant</div>
   <div class="hdr-right">
@@ -131,16 +113,14 @@ textarea:focus,input:focus,select:focus{border-color:var(--accent);}
     <button class="icon-btn" id="btnSettings" title="Settings">⚙</button>
   </div>
 </div>
-
 <div class="tabs">
   <div class="tab active" data-tab="jd">Analyze</div>
   <div class="tab" data-tab="results" id="tabResults" style="display:none">Report</div>
   <div class="tab" data-tab="settings">Profile</div>
 </div>
 
-<!-- ══ ANALYZE PANEL ══ -->
+<!-- ANALYZE -->
 <div class="panel active jd-panel" id="panel-jd">
-
   <div id="corsBox" style="display:none" class="cors-box">
     <div class="cors-head">⚠ Ollama blocked the request (403 CORS) — pick your OS:</div>
     <div class="cors-body">
@@ -156,17 +136,12 @@ textarea:focus,input:focus,select:focus{border-color:var(--accent);}
       </div>
     </div>
   </div>
-
   <div>
     <div class="field-label">Paste Job Description</div>
-    <textarea id="jdInput" placeholder="Paste the full job description here — title, company, requirements, responsibilities, everything…"></textarea>
+    <textarea id="jdInput" placeholder="Paste the full job description here…"></textarea>
     <div class="char-count"><span id="charCount">0</span> chars</div>
   </div>
-
-  <button class="btn btn-primary" id="btnAnalyze" style="width:100%">
-    ✦ Analyze &amp; Generate Resume
-  </button>
-
+  <button class="btn btn-primary" id="btnAnalyze" style="width:100%">✦ Analyze &amp; Generate Resume</button>
   <div class="progress-box" id="progressBox" style="display:none">
     <div class="spinner"></div>
     <div class="progress-msg" id="progressMsg">Connecting to Ollama…</div>
@@ -175,20 +150,16 @@ textarea:focus,input:focus,select:focus{border-color:var(--accent);}
       <button class="btn btn-cancel btn-sm" id="btnCancelAnalysis">✕ Cancel</button>
     </div>
   </div>
-
 </div>
 
-<!-- ══ RESULTS PANEL ══ -->
+<!-- RESULTS -->
 <div class="panel results-panel" id="panel-results">
-
-  <!-- Session restored banner -->
-  <div id="sessionBanner" style="display:none;align-items:center;justify-content:space-between;padding:8px 14px;background:rgba(99,102,241,.08);border-bottom:1px solid rgba(99,102,241,.2);">
+  <div class="session-banner" id="sessionBanner">
     <span style="font-size:11px;color:var(--a2);display:flex;align-items:center;gap:6px;">
       <span>📂</span><span id="sessionInfo">Restored from last session</span>
     </span>
     <button id="btnClearSession" style="font-size:10.5px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:5px;padding:3px 9px;cursor:pointer;font-family:'DM Sans',sans-serif;">✕ Clear</button>
   </div>
-
   <div class="score-header">
     <div>
       <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">ATS Score</div>
@@ -201,20 +172,17 @@ textarea:focus,input:focus,select:focus{border-color:var(--accent);}
     </div>
   </div>
   <div class="result-actions">
-    <button class="btn btn-secondary btn-sm" id="btnDlReport">⬇ Full Report</button>
-    <button class="btn btn-secondary btn-sm" id="btnDlResume">⬇ Resume</button>
-    <button class="btn btn-secondary btn-sm" id="btnPreview">👁 Preview</button>
+    <button class="btn btn-indigo btn-sm" id="btnPreview">📄 ATS Resume</button>
+    <button class="btn btn-secondary btn-sm" id="btnDlResume">⬇ Download</button>
+    <button class="btn btn-secondary btn-sm" id="btnDlReport">⬇ Report</button>
     <button class="btn btn-green btn-sm" id="btnAutofill">⚡ Autofill</button>
-    <button class="btn btn-secondary btn-sm" id="btnNew" style="margin-left:auto" title="Clear session and start new analysis">↺ New</button>
-  </div>
-  <div id="sessionBanner" style="display:none; padding:6px 14px; background:rgba(99,102,241,.07); border-bottom:1px solid var(--border); font-size:10.5px; color:var(--muted); display:flex; align-items:center; justify-content:space-between;">
-    <span id="sessionInfo">📂 Restored from last session</span>
-    <span style="color:#475569;">Click ↺ New to clear</span>
+    <button class="btn btn-yellow btn-sm" id="btnRetry">↺ Retry</button>
+    <button class="btn btn-secondary btn-sm" id="btnNew">✕ New</button>
   </div>
   <div class="report-content" id="reportContent"></div>
 </div>
 
-<!-- ══ SETTINGS PANEL ══ -->
+<!-- SETTINGS -->
 <div class="panel settings-panel" id="panel-settings">
   <div class="form-row">
     <div class="field"><div class="field-label">First Name</div><input id="sFirst"></div>
@@ -226,15 +194,15 @@ textarea:focus,input:focus,select:focus{border-color:var(--accent);}
     <div class="field"><div class="field-label">Location</div><input id="sLoc"></div>
   </div>
   <div class="form-row">
-    <div class="field"><div class="field-label">LinkedIn</div><input id="sLinkedin" type="url" placeholder="https://linkedin.com/in/your-handle"></div>
-    <div class="field"><div class="field-label">GitHub</div><input id="sGithub" type="url" placeholder="https://github.com/your-handle"></div>
+    <div class="field"><div class="field-label">LinkedIn</div><input id="sLinkedin" type="url"></div>
+    <div class="field"><div class="field-label">GitHub</div><input id="sGithub" type="url"></div>
   </div>
-  <div class="field"><div class="field-label">Portfolio / Website</div><input id="sPortfolio" type="url" placeholder="https://your-portfolio.com"></div>
+  <div class="field"><div class="field-label">Portfolio / Website</div><input id="sPortfolio" type="url"></div>
   <div class="divider"></div>
   <div class="field">
     <div class="field-label">Resume Data (JSON)</div>
     <textarea id="sResume" rows="7"></textarea>
-    <div class="hint">Your full resume sent to Ollama with every analysis.</div>
+    <div class="hint">Sent to Ollama with every analysis.</div>
   </div>
   <div class="divider"></div>
   <div class="field"><div class="field-label">Ollama URL</div><input id="sUrl" placeholder="http://localhost:11434"></div>

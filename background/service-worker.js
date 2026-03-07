@@ -3,7 +3,6 @@
 const DEFAULT_BASE  = "http://localhost:11434";
 const DEFAULT_MODEL = "llama3";
 
-// Tracks the currently running analysis so we can cancel it
 let currentAnalysis = null;
 
 // ── CHECK OLLAMA ──────────────────────────────────────────────────────────────
@@ -29,9 +28,7 @@ async function cfg() {
   ]);
 }
 
-// ── STREAMING OLLAMA CALL ────────────────────────────────────────────────────
-// Uses streaming so we can forward tokens to popup in real time.
-// Returns the full accumulated text — never parses JSON.
+// ── STREAMING OLLAMA CALL ─────────────────────────────────────────────────────
 
 async function ollamaStream(systemPrompt, userPrompt, onToken, signal) {
   const settings = await cfg();
@@ -60,272 +57,724 @@ async function ollamaStream(systemPrompt, userPrompt, onToken, signal) {
     throw new Error(`Ollama ${res.status}: ${txt.substring(0,200)}`);
   }
 
-  const reader = res.body.getReader();
+  const reader  = res.body.getReader();
   const decoder = new TextDecoder();
   let full = "";
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-
-    // Each chunk may contain multiple newline-delimited JSON objects
     const lines = decoder.decode(value, { stream: true }).split("\n");
     for (const line of lines) {
       if (!line.trim()) continue;
       try {
         const obj = JSON.parse(line);
         const token = obj?.message?.content || "";
-        if (token) {
-          full += token;
-          onToken(token);
-        }
+        if (token) { full += token; onToken(token); }
         if (obj.done) break;
-      } catch { /* partial JSON line, skip */ }
+      } catch { /* partial JSON line */ }
     }
   }
-
   return full;
 }
 
-// ── BUILD RESUME HTML FROM TEXT ───────────────────────────────────────────────
-// Finds the "Rewrite my resume" section in the raw report and formats it
-// into a clean, print-ready HTML resume.
-
-function extractResumeSection(rawReport) {
-  // Try to grab everything after section 7 heading
-  const patterns = [
-    /(?:7\.?\s*Rewrite|Rewritten Resume|Tailored Resume|Updated Resume)[^\n]*\n([\s\S]+)/i,
-    /(?:Here(?:'s| is) (?:the |your )?(?:rewritten|tailored|updated|revised) resume)[^\n]*\n([\s\S]+)/i,
-  ];
-  for (const p of patterns) {
-    const m = rawReport.match(p);
-    if (m?.[1]?.trim().length > 100) return m[1].trim();
-  }
-  return null; // couldn't find it
-}
+// ── EXACT RESUME HTML BUILDER ─────────────────────────────────────────────────
+// Matches the uploaded template exactly:
+// • Centered ALL-CAPS name, large bold
+// • Tagline (specialties) centered below name
+// • Pipe-separated contact line with hyperlinks
+// • Section headings: bold, ALL-CAPS, full-width bottom border
+// • Experience: "Company | Role — Location    Dates" on one line
+// • Bullets with [Bold Tag] inline skill labels
+// • Skills: "Category: values" on separate lines
+// • Project: name — tech stack on one line, then bullets
+// • Education: "School — Degree    Dates" right-aligned
 
 function buildResumeHTML(profile, resumeSection) {
-  const today = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+  const today = new Date().toLocaleDateString("en-US", { month:"long", day:"numeric", year:"numeric" });
+
   let workAuth = "H1B Visa";
   try {
     const rd = typeof profile.resumeData === "string" ? JSON.parse(profile.resumeData) : (profile.resumeData || {});
     if (rd.workAuthorization) workAuth = rd.workAuthorization;
   } catch (_) {}
 
-  // Contact line: Phone | Email | LinkedIn | GitHub | Portfolio | Work Auth (with hyperlinks)
-  const contactParts = [];
-  if (profile.phone) contactParts.push(escapeHtml(profile.phone));
-  if (profile.email) contactParts.push(`<a href="mailto:${escapeHtml(profile.email)}">${escapeHtml(profile.email)}</a>`);
-  if (profile.linkedin) contactParts.push(`<a href="${escapeHtml(profile.linkedin)}">LinkedIn</a>`);
-  if (profile.github) contactParts.push(`<a href="${escapeHtml(profile.github)}">GitHub</a>`);
-  if (profile.portfolio || profile.website) contactParts.push(`<a href="${escapeHtml(profile.portfolio || profile.website)}">Portfolio</a>`);
-  contactParts.push(`Work Auth: ${escapeHtml(workAuth)}`);
-  const contactLine = contactParts.join(" | ");
+  // ── Contact line
+  const parts = [];
+  if (profile.phone)    parts.push(esc(profile.phone));
+  if (profile.email)    parts.push(`<a href="mailto:${esc(profile.email)}">${esc(profile.email)}</a>`);
+  if (profile.linkedin) parts.push(`<a href="${esc(profile.linkedin)}">LinkedIn</a>`);
+  if (profile.github)   parts.push(`<a href="${esc(profile.github)}">GitHub</a>`);
+  if (profile.portfolio || profile.website)
+    parts.push(`<a href="${esc(profile.portfolio||profile.website)}">Portfolio</a>`);
+  parts.push(`Work Auth: ${esc(workAuth)}`);
+  const contactLine = parts.join(" &nbsp;|&nbsp; ");
 
+  // ── Tagline (pull from resumeData or use default)
+  let tagline = "Distributed Systems | Go | REST APIs | Cloud Infrastructure";
+  try {
+    const rd = typeof profile.resumeData === "string" ? JSON.parse(profile.resumeData) : (profile.resumeData || {});
+    if (rd.tagline) tagline = rd.tagline;
+    else if (rd.skills && rd.skills.length >= 4) {
+      // Build a tagline from top skills
+      tagline = rd.skills.slice(0,4).join(" | ");
+    }
+  } catch (_) {}
+
+  // ── Body: parse the AI-generated resume section or fall back to profile data
   const body = resumeSection
-    ? formatResumeBody(resumeSection)
-    : buildResumeBodyFromProfile(profile);
+    ? parseResumeSection(resumeSection, profile)
+    : buildBodyFromProfile(profile);
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="description" content="Resume — ${escapeHtml(profile.firstName)} ${escapeHtml(profile.lastName)}">
-<title>${escapeHtml(profile.firstName)} ${escapeHtml(profile.lastName)} — Resume</title>
+<title>${esc(profile.firstName)} ${esc(profile.lastName)} — Resume</title>
 <style>
-  *{margin:0;padding:0;box-sizing:border-box;}
-  body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;font-size:10.5pt;color:#1a1a1a;max-width:8.5in;margin:0 auto;padding:.6in;line-height:1.45;}
-  .resume-header{text-align:center;margin-bottom:14px;}
-  .resume-name{font-size:18pt;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#0f172a;}
-  .resume-contact{font-size:9.5pt;color:#475569;margin-top:4px;}
-  .resume-contact a{color:#2563eb;text-decoration:none;}
-  .resume-contact a:hover{text-decoration:underline;}
-  .resume-section{margin-top:14px;}
-  .resume-section h2{font-size:10pt;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#0f172a;border-bottom:1.5px solid #0f172a;padding-bottom:2px;margin-bottom:6px;}
-  .resume-section p{margin-bottom:6px;}
-  .resume-section ul{margin:4px 0 10px 18px;}
-  .resume-section li{margin-bottom:3px;}
-  .job-title{font-weight:700;}
-  .job-meta{font-size:9.5pt;color:#475569;}
-  .generated{margin-top:18px;font-size:8pt;color:#94a3b8;text-align:right;}
-  @media print{body{padding:.5in;}}
+  /* ── Base ── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Calibri', 'Segoe UI', Arial, sans-serif;
+    font-size: 10.5pt;
+    color: #1a1a1a;
+    max-width: 8.5in;
+    margin: 0 auto;
+    padding: 0.55in 0.65in;
+    line-height: 1.4;
+    background: #fff;
+  }
+
+  /* ── Header ── */
+  .r-header { text-align: center; margin-bottom: 6px; }
+  .r-name {
+    font-size: 20pt;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: #0a0a0a;
+    display: block;
+  }
+  .r-tagline {
+    font-size: 10pt;
+    color: #333;
+    margin: 3px 0 5px;
+    letter-spacing: 0.3px;
+  }
+  .r-contact {
+    font-size: 9.5pt;
+    color: #2a2a2a;
+    margin-top: 2px;
+  }
+  .r-contact a { color: #1a0dab; text-decoration: none; }
+  .r-contact a:hover { text-decoration: underline; }
+
+  /* ── Section headings ── */
+  .r-section { margin-top: 13px; }
+  .r-section-title {
+    font-size: 10.5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: #0a0a0a;
+    border-bottom: 1.4px solid #0a0a0a;
+    padding-bottom: 1px;
+    margin-bottom: 7px;
+  }
+
+  /* ── Experience entries ── */
+  .r-job { margin-bottom: 9px; }
+  .r-job-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 3px;
+  }
+  .r-job-left {
+    font-size: 10.5pt;
+    font-weight: 700;
+    color: #0a0a0a;
+  }
+  .r-job-left .r-role { font-weight: 700; }
+  .r-job-left .r-sep  { font-weight: 400; color: #555; margin: 0 3px; }
+  .r-job-right {
+    font-size: 9.5pt;
+    color: #444;
+    white-space: nowrap;
+    text-align: right;
+  }
+  .r-bullets { padding-left: 18px; margin: 0; }
+  .r-bullets li {
+    margin-bottom: 3px;
+    line-height: 1.45;
+    font-size: 10.5pt;
+  }
+  /* [Bold Tag] style — matches image */
+  .r-bullets li .tag { font-weight: 700; }
+  /* Bold inline phrases */
+  .r-bullets li strong, .r-summary strong { font-weight: 700; }
+
+  /* ── Summary ── */
+  .r-summary {
+    font-size: 10.5pt;
+    line-height: 1.5;
+    color: #1a1a1a;
+  }
+
+  /* ── Skills ── */
+  .r-skills-table { width: 100%; border-collapse: collapse; }
+  .r-skills-table td {
+    font-size: 10.5pt;
+    padding: 1.5px 0;
+    vertical-align: top;
+  }
+  .r-skills-table td.sk-label {
+    font-weight: 700;
+    white-space: nowrap;
+    padding-right: 6px;
+    width: 1%;
+  }
+
+  /* ── Project ── */
+  .r-project { margin-bottom: 8px; }
+  .r-project-header {
+    font-size: 10.5pt;
+    font-weight: 700;
+    margin-bottom: 3px;
+  }
+  .r-project-header .proj-tech {
+    font-weight: 400;
+    color: #444;
+    font-style: italic;
+  }
+
+  /* ── Education ── */
+  .r-edu-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 3px;
+  }
+  .r-edu-school { font-weight: 700; font-size: 10.5pt; }
+  .r-edu-deg    { font-weight: 400; font-size: 10.5pt; }
+  .r-edu-dates  { font-size: 9.5pt; color: #444; white-space: nowrap; }
+
+  /* ── Certifications ── */
+  .r-certs { font-size: 10pt; color: #1a1a1a; line-height: 1.55; }
+
+  /* ── Generated note ── */
+  .r-generated { margin-top: 20px; font-size: 8pt; color: #aaa; text-align: right; }
+
+  /* ── Print ── */
+  @media print {
+    body { padding: 0.5in; }
+    .r-generated { display: none; }
+  }
 </style>
 </head>
 <body>
-  <header class="resume-header">
-    <h1 class="resume-name">${escapeHtml(profile.firstName)} ${escapeHtml(profile.lastName)}</h1>
-    <div class="resume-contact">${contactLine}</div>
-  </header>
-  <main>${body}</main>
-  <p class="generated">Generated ${today}</p>
+
+<header class="r-header">
+  <span class="r-name">${esc(profile.firstName)} ${esc(profile.lastName)}</span>
+  <div class="r-tagline">${tagline}</div>
+  <div class="r-contact">${contactLine}</div>
+</header>
+
+<main>${body}</main>
+
+<p class="r-generated">Generated ${today}</p>
 </body>
 </html>`;
 }
 
-function formatResumeBody(raw) {
+// ── PARSE AI RESUME SECTION ───────────────────────────────────────────────────
+// Takes the raw AI-generated resume text and converts it to our exact HTML format.
+
+function parseResumeSection(raw, profile) {
   const lines = raw.split(/\r?\n/);
-  const sections = [];
+  let html = "";
   let i = 0;
-  const sectionHeadings = /^(PROFESSIONAL SUMMARY|SUMMARY|EXPERIENCE|PROFESSIONAL EXPERIENCE|TECHNICAL SKILLS|SKILLS|EDUCATION|CERTIFICATIONS|PROJECTS|ADDITIONAL)/i;
+
+  const SECTION_RE = /^(PROFESSIONAL SUMMARY|SUMMARY|PROFESSIONAL EXPERIENCE|EXPERIENCE|TECHNICAL SKILLS|SKILLS|KEY PROJECT|PROJECTS?|EDUCATION|CERTIFICATIONS?|ADDITIONAL)\s*$/i;
+
   while (i < lines.length) {
-    const line = lines[i];
-    const trimmed = line.trim();
-    if (!trimmed) { i++; continue; }
-    if (sectionHeadings.test(trimmed)) {
-      const heading = trimmed;
-      const block = [];
+    const line = lines[i].trim();
+    if (!line) { i++; continue; }
+
+    if (SECTION_RE.test(line)) {
+      const sectionName = line.toUpperCase();
+      html += `<div class="r-section"><div class="r-section-title">${esc(line.toUpperCase())}</div>`;
+
       i++;
+      // Collect section body lines
+      const sectionLines = [];
       while (i < lines.length) {
-        const t = lines[i].trim();
-        if (t === "" || sectionHeadings.test(t)) break;
-        block.push(lines[i]);
+        if (SECTION_RE.test(lines[i].trim()) && lines[i].trim() !== "") break;
+        sectionLines.push(lines[i]);
         i++;
       }
-      const content = formatSectionContent(block.join("\n"));
-      sections.push(`<div class="resume-section"><h2>${escapeHtml(heading)}</h2>${content}</div>`);
+
+      if (/SUMMARY/i.test(sectionName)) {
+        html += buildSummaryHTML(sectionLines);
+      } else if (/EXPERIENCE/i.test(sectionName)) {
+        html += buildExperienceHTML(sectionLines);
+      } else if (/SKILL/i.test(sectionName)) {
+        html += buildSkillsHTML(sectionLines);
+      } else if (/PROJECT/i.test(sectionName)) {
+        html += buildProjectsHTML(sectionLines);
+      } else if (/EDUCATION/i.test(sectionName)) {
+        html += buildEducationHTML(sectionLines);
+      } else if (/CERT/i.test(sectionName)) {
+        html += buildCertsHTML(sectionLines);
+      } else {
+        html += buildGenericHTML(sectionLines);
+      }
+
+      html += `</div>`;
       continue;
     }
-    const block = [];
-    while (i < lines.length) {
-      const t = lines[i].trim();
-      if (t === "" || sectionHeadings.test(t)) break;
-      block.push(lines[i]);
-      i++;
-    }
-    if (block.length) {
-      const content = formatSectionContent(block.join("\n"));
-      sections.push(`<div class="resume-section">${content}</div>`);
-    }
+    i++;
   }
-  if (sections.length === 0) {
-    return `<div class="resume-section" style="white-space:pre-wrap">${escapeHtml(raw)}</div>`;
-  }
-  return sections.join("\n");
+
+  // If parsing found nothing, fall back to profile data
+  if (!html.trim()) return buildBodyFromProfile(profile);
+  return html;
 }
 
-function formatSectionContent(text) {
-  const lines = text.split(/\r?\n/).filter(l => l.trim());
-  const items = [];
-  let inList = false;
-  let listItems = [];
-  const flushList = () => {
-    if (listItems.length) {
-      items.push("<ul>" + listItems.map(li => "<li>" + escapeHtml(li.replace(/^[\s•\-*]+\s*/, "").trim()) + "</li>").join("") + "</ul>");
-      listItems = [];
-    }
-    inList = false;
+// ── SECTION BUILDERS ─────────────────────────────────────────────────────────
+
+function buildSummaryHTML(lines) {
+  const text = lines.join(" ").trim();
+  if (!text) return "";
+  return `<p class="r-summary">${formatInline(text)}</p>`;
+}
+
+function buildExperienceHTML(lines) {
+  // Group into individual job blocks separated by blank lines or company lines
+  let html = "";
+  let jobLines = [];
+
+  const flushJob = () => {
+    if (!jobLines.length) return;
+    html += buildSingleJobHTML(jobLines);
+    jobLines = [];
   };
+
   for (const line of lines) {
-    const trimmed = line.trim();
-    if (/^[•\-*]\s+/.test(trimmed) || (trimmed.startsWith("•") || trimmed.startsWith("-"))) {
-      if (!inList) flushList();
-      inList = true;
-      listItems.push(trimmed);
-    } else {
-      flushList();
-      if (trimmed) items.push("<p>" + escapeHtml(trimmed) + "</p>");
+    // A blank line between jobs
+    if (!line.trim()) {
+      // Only flush if we have content and the last jobLine wasn't also blank
+      if (jobLines.length && jobLines[jobLines.length-1].trim()) {
+        // Peek ahead — don't flush prematurely if more bullets follow
+      }
+      jobLines.push(line);
+      continue;
     }
+    jobLines.push(line);
   }
-  flushList();
-  return items.join("");
+  flushJob();
+  return html;
 }
 
-function buildResumeBodyFromProfile(profile) {
+function buildSingleJobHTML(lines) {
+  // Find the header line — it's the first non-blank, non-bullet line
+  let headerIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i].trim();
+    if (t && !t.startsWith("•") && !t.startsWith("-") && !t.startsWith("*")) {
+      headerIdx = i;
+      break;
+    }
+  }
+  if (headerIdx === -1) return buildBulletList(lines);
+
+  const header = lines[headerIdx].trim();
+  const bullets = lines.slice(headerIdx + 1).filter(l => l.trim());
+
+  // Parse header: various formats
+  // "Company | Role — Location    Dates"
+  // "Company | Role | Location | Dates"
+  // "Company — Role   Dates"
+  let company = "", role = "", location = "", dates = "";
+
+  // Try to extract dates from end (e.g. "Jan 2025 – Present" or "2021 – 2022")
+  const datesMatch = header.match(/(\w+\s+\d{4}\s*[–\-—]\s*(?:Present|\w+\s+\d{4})|\d{4}\s*[–\-—]\s*(?:Present|\d{4}))$/);
+  if (datesMatch) {
+    dates = datesMatch[1].trim();
+  }
+
+  // Extract location (after last | or ,  before dates)
+  const withoutDates = header.replace(datesMatch ? datesMatch[0] : "", "").trim().replace(/[,|]\s*$/, "");
+
+  // Split on | first
+  const pipeParts = withoutDates.split("|").map(p => p.trim()).filter(Boolean);
+  if (pipeParts.length >= 3) {
+    company  = pipeParts[0];
+    role     = pipeParts[1];
+    location = pipeParts[2];
+  } else if (pipeParts.length === 2) {
+    // Check if second part contains "—" for role — location
+    const dashIdx = pipeParts[1].indexOf("—");
+    if (dashIdx > -1) {
+      role     = pipeParts[1].substring(0, dashIdx).trim();
+      location = pipeParts[1].substring(dashIdx+1).trim();
+    } else {
+      role     = pipeParts[1];
+    }
+    company = pipeParts[0];
+  } else {
+    // Single value — use as-is
+    const dashIdx = withoutDates.indexOf("—");
+    if (dashIdx > -1) {
+      company = withoutDates.substring(0, dashIdx).trim();
+      role    = withoutDates.substring(dashIdx+1).trim();
+    } else {
+      company = withoutDates;
+    }
+  }
+
+  let jobLeftHTML = `<span class="r-job-left">${esc(company)}`;
+  if (role)     jobLeftHTML += `<span class="r-sep"> | </span><span class="r-role">${esc(role)}</span>`;
+  if (location) jobLeftHTML += `<span class="r-sep"> — </span>${esc(location)}`;
+  jobLeftHTML += `</span>`;
+
+  let html = `<div class="r-job">
+  <div class="r-job-header">
+    ${jobLeftHTML}
+    <span class="r-job-right">${esc(dates)}</span>
+  </div>`;
+
+  if (bullets.length) {
+    html += `<ul class="r-bullets">`;
+    for (const b of bullets) {
+      const clean = b.replace(/^[\s•\-*]+/, "").trim();
+      if (clean) html += `<li>${formatBullet(clean)}</li>`;
+    }
+    html += `</ul>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+function buildSkillsHTML(lines) {
+  // Format: "Category: value1, value2" or plain list
+  let html = `<table class="r-skills-table">`;
+  let hasCategories = false;
+
+  for (const line of lines) {
+    const t = line.trim();
+    if (!t) continue;
+    const colonIdx = t.indexOf(":");
+    if (colonIdx > 0 && colonIdx < 35) {
+      hasCategories = true;
+      const label  = t.substring(0, colonIdx).trim();
+      const values = t.substring(colonIdx+1).trim();
+      html += `<tr><td class="sk-label">${esc(label)}:</td><td>${esc(values)}</td></tr>`;
+    } else if (t.startsWith("•") || t.startsWith("-")) {
+      html += `<tr><td colspan="2">${esc(t.replace(/^[•\-]\s*/,""))}</td></tr>`;
+    } else if (t) {
+      html += `<tr><td colspan="2">${esc(t)}</td></tr>`;
+    }
+  }
+  html += `</table>`;
+  return html;
+}
+
+function buildProjectsHTML(lines) {
+  let html = "";
+  let projLines = [];
+
+  const flushProj = () => {
+    if (!projLines.length) return;
+    // First non-blank line is project header
+    const headerLine = projLines.find(l => l.trim() && !l.trim().startsWith("•") && !l.trim().startsWith("-"));
+    if (!headerLine) { html += buildBulletList(projLines); projLines = []; return; }
+
+    const bullets = projLines.filter(l => l.trim() && (l.trim().startsWith("•") || l.trim().startsWith("-")));
+
+    // Parse "ProjectName — Go, PostgreSQL, Kafka" or "ProjectName | tech"
+    let name = headerLine.trim(), tech = "";
+    const emDash = headerLine.indexOf(" — ");
+    const pipe   = headerLine.indexOf(" | ");
+    const sep    = emDash > -1 ? emDash : pipe > -1 ? pipe : -1;
+    if (sep > -1) {
+      name = headerLine.substring(0, sep).trim();
+      tech = headerLine.substring(sep+3).trim();
+    }
+
+    html += `<div class="r-project">
+  <div class="r-project-header">${esc(name)}${tech ? ` <span class="r-sep"> — </span><span class="proj-tech">${esc(tech)}</span>` : ""}</div>`;
+    if (bullets.length) {
+      html += `<ul class="r-bullets">`;
+      for (const b of bullets) {
+        const clean = b.replace(/^[\s•\-*]+/, "").trim();
+        if (clean) html += `<li>${formatBullet(clean)}</li>`;
+      }
+      html += `</ul>`;
+    }
+    html += `</div>`;
+    projLines = [];
+  };
+
+  for (const line of lines) {
+    if (!line.trim() && projLines.some(l => l.trim())) { flushProj(); continue; }
+    projLines.push(line);
+  }
+  flushProj();
+  return html;
+}
+
+function buildEducationHTML(lines) {
+  let html = "";
+  for (const line of lines) {
+    const t = line.trim();
+    if (!t) continue;
+
+    // Format: "School Name — Degree Field    Dates"
+    // or "School | Degree | Dates"
+    const datesMatch = t.match(/(\w+\s+\d{4}\s*[–\-—]\s*(?:Present|\w+\s+\d{4})|(?:Aug|Sep|Jan|Dec|May|Jun|Jul|Feb|Mar|Apr|Oct|Nov)\s+\d{4}|\d{4}\s*[–\-—]\s*(?:Present|\d{4})|\d{4})$/);
+    const dates = datesMatch ? datesMatch[1].trim() : "";
+    const withoutDates = t.replace(datesMatch ? datesMatch[0] : "", "").trim().replace(/\s*[|,]\s*$/, "");
+
+    let school = "", degree = "";
+    const emDash = withoutDates.indexOf(" — ");
+    const pipe   = withoutDates.indexOf(" | ");
+    const sep    = emDash > -1 ? emDash : pipe > -1 ? pipe : -1;
+    if (sep > -1) {
+      school = withoutDates.substring(0, sep).trim();
+      degree = withoutDates.substring(sep + 3).trim();
+    } else {
+      school = withoutDates;
+    }
+
+    html += `<div class="r-edu-row">
+  <span><span class="r-edu-school">${esc(school)}</span>${degree ? `<span class="r-edu-deg"> &mdash; ${esc(degree)}</span>` : ""}</span>
+  <span class="r-edu-dates">${esc(dates)}</span>
+</div>`;
+  }
+  return html;
+}
+
+function buildCertsHTML(lines) {
+  const certs = lines.map(l => l.trim()).filter(Boolean).map(l => l.replace(/^[•\-*]\s*/, ""));
+  if (!certs.length) return "";
+  return `<p class="r-certs">${certs.map(c => esc(c)).join(" &nbsp;|&nbsp; ")}</p>`;
+}
+
+function buildGenericHTML(lines) {
+  return buildBulletList(lines);
+}
+
+function buildBulletList(lines) {
+  const items = lines.filter(l => l.trim());
+  if (!items.length) return "";
+  return `<ul class="r-bullets">${items.map(l => {
+    const clean = l.trim().replace(/^[•\-*]\s*/, "");
+    return clean ? `<li>${formatBullet(clean)}</li>` : "";
+  }).join("")}</ul>`;
+}
+
+// ── PROFILE FALLBACK ──────────────────────────────────────────────────────────
+// Used when AI doesn't return a parseable resume section.
+
+function buildBodyFromProfile(profile) {
   let html = "";
   try {
-    const rd = typeof profile.resumeData === "string" ? JSON.parse(profile.resumeData) : (profile.resumeData || {});
+    const rd = typeof profile.resumeData === "string"
+      ? JSON.parse(profile.resumeData)
+      : (profile.resumeData || {});
+
+    // Summary
+    if (rd.summary) {
+      html += `<div class="r-section">
+  <div class="r-section-title">PROFESSIONAL SUMMARY</div>
+  <p class="r-summary">${formatInline(esc(rd.summary))}</p>
+</div>`;
+    }
+
+    // Experience
     if (rd.experience?.length) {
-      html += '<div class="resume-section"><h2>Professional Experience</h2>';
+      html += `<div class="r-section"><div class="r-section-title">PROFESSIONAL EXPERIENCE</div>`;
       for (const job of rd.experience) {
-        html += `<p class="job-title">${escapeHtml(job.company)} | ${escapeHtml(job.title)}</p>`;
-        html += `<p class="job-meta">${escapeHtml(job.location || "")} | ${escapeHtml(job.dates || "")}</p><ul>`;
-        (job.bullets || []).forEach(b => { html += `<li>${escapeHtml(b)}</li>`; });
-        html += "</ul>";
+        html += `<div class="r-job">
+  <div class="r-job-header">
+    <span class="r-job-left">${esc(job.company)}<span class="r-sep"> | </span><span class="r-role">${esc(job.title)}</span></span>
+    <span class="r-job-right">${esc(job.location||"")}${job.location&&job.dates?" &nbsp;|&nbsp; ":""}${esc(job.dates||"")}</span>
+  </div>
+  <ul class="r-bullets">${(job.bullets||[]).map(b => `<li>${formatBullet(esc(b))}</li>`).join("")}</ul>
+</div>`;
       }
-      html += "</div>";
+      html += `</div>`;
     }
+
+    // Skills
     if (rd.skills?.length) {
-      html += `<div class="resume-section"><h2>Technical Skills</h2><p>${escapeHtml(rd.skills.join(", "))}</p></div>`;
+      html += `<div class="r-section">
+  <div class="r-section-title">TECHNICAL SKILLS</div>
+  <p style="font-size:10.5pt">${esc(rd.skills.join(", "))}</p>
+</div>`;
     }
-    if (rd.education?.length) {
-      html += '<div class="resume-section"><h2>Education</h2>';
-      for (const e of rd.education) {
-        html += `<p><strong>${escapeHtml(e.school)}</strong> — ${escapeHtml(e.degree)} ${escapeHtml(e.field || "")} (${escapeHtml(e.year || "")})</p>`;
+
+    // Projects
+    if (rd.projects?.length) {
+      html += `<div class="r-section"><div class="r-section-title">KEY PROJECT</div>`;
+      for (const p of rd.projects) {
+        html += `<div class="r-project">
+  <div class="r-project-header">${esc(p.name)}${p.tech?.length ? ` <span class="r-sep"> — </span><span class="proj-tech">${esc(p.tech.join(", "))}</span>` : ""}</div>
+  <p style="font-size:10.5pt;margin-top:2px">${esc(p.description||"")}</p>
+</div>`;
       }
-      html += "</div>";
+      html += `</div>`;
     }
+
+    // Education
+    if (rd.education?.length) {
+      html += `<div class="r-section"><div class="r-section-title">EDUCATION</div>`;
+      for (const e of rd.education) {
+        html += `<div class="r-edu-row">
+  <span><span class="r-edu-school">${esc(e.school)}</span><span class="r-edu-deg"> &mdash; ${esc(e.degree)} ${esc(e.field||"")}</span></span>
+  <span class="r-edu-dates">${esc(e.year||"")}</span>
+</div>`;
+      }
+      html += `</div>`;
+    }
+
+    // Certifications
     if (rd.certifications?.length) {
-      html += `<div class="resume-section"><h2>Certifications</h2><ul>`;
-      rd.certifications.forEach(c => { html += `<li>${escapeHtml(c)}</li>`; });
-      html += "</ul></div>";
+      html += `<div class="r-section">
+  <div class="r-section-title">CERTIFICATIONS</div>
+  <p class="r-certs">${rd.certifications.map(c => esc(c)).join(" &nbsp;|&nbsp; ")}</p>
+</div>`;
     }
-  } catch (_) {}
-  return html || "<p>Resume content generated — see the full report for section-by-section rewrites.</p>";
+  } catch (e) {
+    html += `<p>(Could not parse resume data: ${esc(e.message)})</p>`;
+  }
+  return html;
 }
 
-function escapeHtml(t) {
-  return t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+// ── INLINE FORMATTERS ─────────────────────────────────────────────────────────
+
+function formatBullet(text) {
+  // [Bold Tag] → <span class="tag">Bold Tag</span>  (matches image style)
+  text = text.replace(/\[([^\]]+)\]/g, (_, t) => `<span class="tag">[${esc(t)}]</span>`);
+  // **bold** or __bold__
+  text = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  text = text.replace(/__([^_]+)__/g, "<strong>$1</strong>");
+  return text;
 }
 
-// ── YOUR EXACT PROMPT ─────────────────────────────────────────────────────────
+function formatInline(text) {
+  text = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  text = text.replace(/__([^_]+)__/g, "<strong>$1</strong>");
+  return text;
+}
+
+function esc(t) {
+  if (!t) return "";
+  return String(t)
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;");
+}
+
+// ── EXTRACT RESUME SECTION ────────────────────────────────────────────────────
+
+function extractResumeSection(rawReport) {
+  const patterns = [
+    /(?:7\.?\s*Rewrite|Rewritten Resume|Tailored Resume|Updated Resume|Here(?:'s| is)[^:]*resume)[^\n]*\n([\s\S]+)/i,
+    /(?:PROFESSIONAL SUMMARY|SUMMARY)\s*\n([\s\S]+)/i,
+  ];
+  for (const p of patterns) {
+    const m = rawReport.match(p);
+    if (m?.[1]?.trim().length > 100) return m[1].trim();
+  }
+  return null;
+}
+
+// ── PROMPT ────────────────────────────────────────────────────────────────────
 
 function buildPrompt(jd, profile) {
   const resumeText = buildResumeText(profile);
 
-  const system = `You are an expert ATS analyzer and resume consultant with deep knowledge of applicant tracking systems, 
-recruiting practices, and technical hiring. Be thorough, specific, and actionable. 
-Format your response with clear numbered sections and use tables where requested.`;
+  const system = `You are an expert ATS analyzer and resume consultant. Be thorough, specific, and actionable. 
+Format your response with clear numbered sections and use tables for keyword analysis.
+When you write the rewritten resume in section 7, use EXACTLY this structure with these exact section headings on their own lines:
+PROFESSIONAL SUMMARY
+PROFESSIONAL EXPERIENCE
+TECHNICAL SKILLS
+KEY PROJECT
+EDUCATION
+CERTIFICATIONS`;
 
   const user = `I need you to act as an expert ATS (Applicant Tracking System) analyzer and resume consultant. 
-Please review my resume thoroughly in comparison with my target job description and provide:
+Please review my resume in comparison with the target job description and provide:
 
 1. ATS Score Analysis:
-   • Give me an overall ATS compatibility score out of 100
-   • Explain the scoring methodology you used
-   • Identify any formatting or structural issues that might cause ATS rejection
-   • Check for proper use of keywords, standard section headings, and machine-readable format
+   • Overall ATS compatibility score out of 100
+   • Explain scoring methodology
+   • Identify formatting or structural issues
+   • Check keywords, standard headings, machine-readable format
 
 2. Job Description Match Analysis:
-   • Calculate a match percentage between my resume and the job description
-   • List the key requirements from the job description and indicate which ones my resume addresses
-   • Identify critical keywords from the job description that are missing in my resume
-   • Highlight skills and qualifications mentioned in the job description that I should emphasize more
-   • Point out any gaps between what the job requires and what my resume shows
+   • Match percentage between resume and job description
+   • Key requirements from JD and which ones my resume addresses
+   • Critical keywords from JD missing in my resume
+   • Skills/qualifications to emphasize more
+   • Gaps between job requirements and my resume
 
 3. Detailed Section-by-Section Breakdown:
-   For each section of my resume (Summary/Objective, Work Experience, Education, Skills, Certifications), provide:
-   - Good Points: What's working well (strong action verbs, quantifiable achievements, relevant keywords, proper formatting)
-   - Points to Improve: What needs enhancement (weak descriptions, missing metrics, vague statements, poor keyword usage)
-   - Points to Add: What's missing (specific achievements relevant to the role, required skills from JD, important details)
+   For each section (Summary, Experience, Skills, Education):
+   - Good Points: what's working well
+   - Points to Improve: what needs enhancement
+   - Points to Add: what's missing
 
-4. Keyword Optimization:
-   • List the top 10-15 keywords from the job description
-   • Show how many times each keyword appears in my resume
-   • Suggest where and how to naturally incorporate missing keywords
-   (Present this as a table: Keyword | Times in Resume | Priority | Suggested Placement)
+4. Keyword Optimization Table:
+   (Table format: Keyword | Times in Resume | Priority | Suggested Placement)
+   Top 10-15 keywords from the job description.
 
 5. Content Alignment Recommendations:
-   • Which experiences should I emphasize more based on the job description?
-   • What achievements should I add or modify to better match the role?
-   • Are there any irrelevant sections I should minimize or remove?
+   • Which experiences to emphasize more
+   • Achievements to add or modify
+   • Irrelevant sections to minimize
 
 6. Overall Strategy:
-   • Summary of top 3-5 changes I should make to improve my chances
-   • Formatting improvements for better ATS parsing
-   • Final recommendations for tailoring this resume to the specific role
+   • Top 3-5 changes to improve chances
+   • Formatting improvements
+   • Final recommendations
 
 7. Rewrite my resume:
-   • Give the full content I should put in every section
-   • Incorporate every modification you suggested to improve the ATS score and job description match
-   • Include a tailored Professional Summary, reordered/rewritten Experience bullets, optimized Skills section
-   • Make it ready to copy-paste
+   Write the COMPLETE rewritten resume content below. Use EXACTLY these section headings on their own lines (no numbers, no dashes):
 
-Please be specific with examples and provide actionable feedback. Use tables for the keyword analysis section.
+PROFESSIONAL SUMMARY
+[Write a 3-4 sentence tailored summary]
+
+PROFESSIONAL EXPERIENCE
+[For each job, write on ONE line: Company | Role — Location    Dates
+Then bullets starting with • using [Bold Tag] format like: • [Achievement Category] Description with **bold metrics**]
+
+TECHNICAL SKILLS
+[Write as: Category: value1, value2, value3
+One category per line]
+
+KEY PROJECT
+[Project Name — Tech Stack, Tech Stack
+• [Bold Tag] Description bullet
+• [Bold Tag] Description bullet]
+
+EDUCATION
+[School Name — Degree Field    Dates
+One school per line]
+
+CERTIFICATIONS
+[Cert1 | Cert2 | Cert3 on one line]
 
 Here is my resume:
 ${resumeText}
 
-Here is the job description I'm targeting:
+Here is the target job description:
 ${jd}`;
 
   return { system, user };
@@ -333,8 +782,8 @@ ${jd}`;
 
 function buildResumeText(profile) {
   let text = `Name: ${profile.firstName} ${profile.lastName}
-Email: ${profile.email || ""} | Phone: ${profile.phone || ""} | Location: ${profile.location || ""}
-LinkedIn: ${profile.linkedin || ""} | GitHub: ${profile.github || ""} | Portfolio: ${profile.portfolio || profile.website || ""}
+Email: ${profile.email||""} | Phone: ${profile.phone||""} | Location: ${profile.location||""}
+LinkedIn: ${profile.linkedin||""} | GitHub: ${profile.github||""} | Portfolio: ${profile.portfolio||profile.website||""}
 Work Authorization: H1B Visa\n\n`;
 
   try {
@@ -345,26 +794,22 @@ Work Authorization: H1B Visa\n\n`;
     if (rd.experience?.length) {
       text += "PROFESSIONAL EXPERIENCE\n";
       for (const job of rd.experience) {
-        text += `\n${job.title} | ${job.company} | ${job.dates} | ${job.location || ""}\n`;
-        (job.bullets || []).forEach(b => { text += `• ${b}\n`; });
+        text += `\n${job.title} | ${job.company} | ${job.dates} | ${job.location||""}\n`;
+        (job.bullets||[]).forEach(b => { text += `• ${b}\n`; });
       }
     }
-
     if (rd.skills?.length) {
       text += `\nTECHNICAL SKILLS\n${rd.skills.join(", ")}\n`;
     }
-
     if (rd.education?.length) {
       text += "\nEDUCATION\n";
       for (const e of rd.education) {
         text += `${e.degree} in ${e.field} | ${e.school} | ${e.year}\n`;
       }
     }
-
     if (rd.certifications?.length) {
-      text += `\nCERTIFICATIONS\n${rd.certifications.join("\n")}\n`;
+      text += `\nCERTIFICATIONS\n${rd.certifications.join(" | ")}\n`;
     }
-
     if (rd.projects?.length) {
       text += "\nPROJECTS\n";
       for (const p of rd.projects) {
@@ -372,10 +817,8 @@ Work Authorization: H1B Visa\n\n`;
       }
     }
   } catch {
-    text += "(Resume data parsing error — using raw data)\n";
-    text += JSON.stringify(profile.resumeData || {}, null, 2);
+    text += "(Resume data parsing error)\n";
   }
-
   return text;
 }
 
@@ -384,39 +827,30 @@ Work Authorization: H1B Visa\n\n`;
 async function handleFullAnalysis(jd, profile, senderTabId) {
   const { system, user } = buildPrompt(jd, profile);
 
-  // Set up cancellable analysis
   const controller = new AbortController();
-  currentAnalysis = {
-    controller,
-    startedAt: Date.now(),
-    jd,
-  };
+  currentAnalysis = { controller, startedAt: Date.now(), jd };
 
-  // Forward streaming tokens to any open popup
   const onToken = (token) => {
     chrome.runtime.sendMessage({ action: "streamToken", token }, () => {
-      if (chrome.runtime.lastError) { /* Popup closed or not open — ignore */ }
+      if (chrome.runtime.lastError) { /* popup closed */ }
     });
   };
 
   try {
     const rawReport = await ollamaStream(system, user, onToken, controller.signal);
 
-    // Extract ATS score
     let atsScore = 0;
     const m = rawReport.match(/(?:ATS|overall)[^\d]*(\d{2,3})\s*(?:\/\s*100|%|out of)/i)
             || rawReport.match(/score[^\d]*(\d{2,3})\s*\/\s*100/i)
             || rawReport.match(/\b(\d{2,3})\s*\/\s*100\b/);
     if (m) atsScore = Math.min(100, Math.max(0, parseInt(m[1])));
 
-    // Extract rewritten resume section and build HTML
     const resumeSection = extractResumeSection(rawReport);
-    const resumeHTML = buildResumeHTML(profile, resumeSection);
+    const resumeHTML    = buildResumeHTML(profile, resumeSection);
 
-    // Persist session so results are available even if popup was closed
     await chrome.storage.local.set({
       lastSession: {
-        report: rawReport,
+        report:      rawReport,
         resumeHTML,
         coverLetter: "",
         atsScore,
@@ -427,7 +861,6 @@ async function handleFullAnalysis(jd, profile, senderTabId) {
 
     return { success: true, report: rawReport, atsScore, resumeHTML };
   } finally {
-    // Clear current analysis marker when finished or cancelled
     if (currentAnalysis && currentAnalysis.controller === controller) {
       currentAnalysis = null;
     }
@@ -456,7 +889,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
           sendResponse({ success: false, error: msg });
         }
       });
-    return true; // async
+    return true;
   }
 
   if (req.action === "cancelAnalysis") {
@@ -471,20 +904,15 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
   }
 
   if (req.action === "getAnalysisStatus") {
-    if (currentAnalysis) {
-      sendResponse({
-        running: true,
-        startedAt: currentAnalysis.startedAt,
-      });
-    } else {
-      sendResponse({ running: false });
-    }
+    sendResponse(currentAnalysis
+      ? { running: true, startedAt: currentAnalysis.startedAt }
+      : { running: false });
     return true;
   }
 
   if (req.action === "download") {
     const mime = req.mime || "text/plain";
-    const url = `data:${mime};charset=utf-8,` + encodeURIComponent(req.content || "");
+    const url  = `data:${mime};charset=utf-8,` + encodeURIComponent(req.content || "");
     chrome.downloads.download({ url, filename: req.filename, saveAs: true }, () => {
       sendResponse({ success: true });
     });
@@ -503,7 +931,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
       }
       sendResponse(r || { success: false, error: "No response from page" });
     });
-    return true; // keep channel open for async callback
+    return true;
   }
 
   return true;
