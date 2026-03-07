@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "AI Job Applicant — Powered by Ollama",
-  "version": "1.1.0",
-  "description": "ATS resume analyzer + tailored resume generator using local Ollama. No API keys, 100% private.",
-  "permissions": ["activeTab","scripting","storage","downloads","tabs"],
-  "host_permissions": ["<all_urls>","http://localhost:11434/*"],
+  "name": "JobHunt AI Copilot",
+  "version": "3.0.0",
+  "description": "AI-powered job application assistant for Prasanna Kumar. Tailors resumes, writes cover letters, autofills forms — powered by local Ollama. 100% private, no API keys.",
+  "permissions": ["activeTab","scripting","storage","downloads","tabs","contextMenus"],
+  "host_permissions": ["<all_urls>","http://localhost:11434/*","http://127.0.0.1:11434/*"],
   "background": {
     "service_worker": "background/service-worker.js",
     "type": "module"
@@ -17,20 +17,20 @@
   "action": {
     "default_popup": "popup/popup.html",
     "default_icon": {
-      "16": "assets/icon16.png",
-      "32": "assets/icon32.png",
-      "48": "assets/icon48.png",
+      "16":  "assets/icon16.png",
+      "32":  "assets/icon32.png",
+      "48":  "assets/icon48.png",
       "128": "assets/icon128.png"
     }
   },
   "icons": {
-    "16": "assets/icon16.png",
-    "32": "assets/icon32.png",
-    "48": "assets/icon48.png",
+    "16":  "assets/icon16.png",
+    "32":  "assets/icon32.png",
+    "48":  "assets/icon48.png",
     "128": "assets/icon128.png"
   },
   "web_accessible_resources": [{
-    "resources": ["assets/*","popup/defaults.js"],
+    "resources": ["assets/*","popup/profile.js"],
     "matches": ["<all_urls>"]
   }]
 }
