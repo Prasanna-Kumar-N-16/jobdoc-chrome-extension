@@ -5,6 +5,16 @@ const DEFAULT_MODEL = "llama3";
 
 let activeGeneration = null; // { controller, startedAt }
 
+function fetchWithTimeout(url, init = {}, timeoutMs = 4000) {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+  if (init.signal) {
+    if (init.signal.aborted) controller.abort();
+    else init.signal.addEventListener("abort", () => controller.abort(), { once: true });
+  }
+  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(t));
+}
+
 // ── CONFIG ────────────────────────────────────────────────────────────────────
 async function cfg() {
   return chrome.storage.local.get([
@@ -19,7 +29,7 @@ async function checkOllama() {
   try {
     const { ollamaUrl } = await cfg();
     const base = ollamaUrl || DEFAULT_BASE;
-    const res = await fetch(base + "/api/tags", { signal: AbortSignal.timeout(4000) });
+    const res = await fetchWithTimeout(base + "/api/tags", {}, 4000);
     if (!res.ok) return { online: false, status: res.status };
     const data = await res.json();
     const models = (data.models || []).map(m => m.name);
