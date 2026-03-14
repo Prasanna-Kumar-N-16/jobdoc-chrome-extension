@@ -1,271 +1,283 @@
-// content/content.js — Universal Job Scraper + Form Autofiller v3
+// content/content.js — Job data scraper for JobHunt AI Copilot v4
+// Runs on all supported job sites
+
 (function () {
-  "use strict";
-  if (window._jobHuntAiReady) return; // prevent double-injection
-  window._jobHuntAiReady = true;
+  'use strict';
 
-  // ── SCRAPERS ─────────────────────────────────────────────────────────────────
-  const SCRAPERS = {
-    "linkedin.com": () => {
-      const title     = qs([".job-details-jobs-unified-top-card__job-title",".jobs-unified-top-card__job-title","h1.t-24","h1"])?.innerText?.trim();
-      const company   = qs([".job-details-jobs-unified-top-card__company-name",".jobs-unified-top-card__company-name"])?.innerText?.trim();
-      const location  = qs([".job-details-jobs-unified-top-card__bullet",".jobs-unified-top-card__bullet"])?.innerText?.trim();
-      const description = qs([".jobs-description__content","#job-details",".description__text"])?.innerText?.trim();
-      const easyApply = !!document.querySelector(".jobs-apply-button--top-card, [data-control-name='easy_apply_global_tnf']");
-      return { title, company, location, description, easyApply, site: "linkedin" };
-    },
-    "indeed.com": () => {
-      const title       = qs(['[data-testid="jobsearch-JobInfoHeader-title"]','h1'])?.innerText?.trim();
-      const company     = qs(['[data-testid="inlineHeader-companyName"]','.jobsearch-CompanyInfoContainer'])?.innerText?.trim();
-      const location    = qs(['[data-testid="job-location"]'])?.innerText?.trim();
-      const description = qs(['#jobDescriptionText','.jobsearch-jobDescriptionText'])?.innerText?.trim();
-      return { title, company, location, description, site: "indeed" };
-    },
-    "greenhouse.io": () => {
-      const title       = qs(["h1.app-title","h1"])?.innerText?.trim();
-      const company     = qs([".company-name",".header--title"])?.innerText?.trim();
-      const location    = qs([".location",".company--location"])?.innerText?.trim();
-      const description = qs(["#content","#main_fields","div.content"])?.innerText?.trim();
-      return { title, company, location, description, site: "greenhouse" };
-    },
-    "lever.co": () => {
-      const title       = qs(["h2","div.posting-headline h2"])?.innerText?.trim();
-      const company     = qs([".main-header-logo img"])?.alt?.trim() || document.title?.split("at ")?.[1]?.trim();
-      const location    = qs([".posting-categories .location",".sort-by-time"])?.innerText?.trim();
-      const description = qs([".posting-description",".posting-body"])?.innerText?.trim();
-      return { title, company, location, description, site: "lever" };
-    },
-    "myworkdayjobs.com": () => {
-      const title       = qs(['[data-automation-id="jobPostingHeader"]','h2'])?.innerText?.trim();
-      const company     = qs(['[data-automation-id="legalEntityDisplay"]'])?.innerText?.trim();
-      const location    = qs(['[data-automation-id="locations"]'])?.innerText?.trim();
-      const description = qs(['[data-automation-id="jobPostingDescription"]'])?.innerText?.trim();
-      return { title, company, location, description, site: "workday" };
-    },
-    "jobright.ai": () => {
-      const title       = qs(["h1.job-title","h1"])?.innerText?.trim();
-      const company     = qs([".company-name",".employer-name"])?.innerText?.trim();
-      const location    = qs([".job-location",".location"])?.innerText?.trim();
-      const description = qs([".job-description",".jd-content","[class*='description']"])?.innerText?.trim();
-      return { title, company, location, description, site: "jobright" };
-    },
-    "glassdoor.com": () => {
-      const title       = qs(['[data-test="job-title"]','h1'])?.innerText?.trim();
-      const company     = qs(['[data-test="employer-name"]','.employer-name'])?.innerText?.trim();
-      const location    = qs(['[data-test="location"]'])?.innerText?.trim();
-      const description = qs(['[class*="JobDescription"]','#JobDescriptionContainer','.desc'])?.innerText?.trim();
-      return { title, company, location, description, site: "glassdoor" };
-    },
-    "ziprecruiter.com": () => {
-      const title       = qs(["h1.job_title","h1"])?.innerText?.trim();
-      const company     = qs([".hiring_company_text"])?.innerText?.trim();
-      const location    = qs([".location"])?.innerText?.trim();
-      const description = qs(["[class*='jobDescriptionSection']",".job_description"])?.innerText?.trim();
-      return { title, company, location, description, site: "ziprecruiter" };
-    }
-  };
+  let lastUrl = location.href;
+  let lastJobData = null;
+  let scrapeTimeout = null;
 
-  function qs(selectors) {
-    if (typeof selectors === "string") return document.querySelector(selectors);
-    for (const s of selectors) { const el = document.querySelector(s); if (el) return el; }
+  // ─── Site Detection ─────────────────────────────────────────────────────────
+
+  function detectSite() {
+    const host = location.hostname;
+    if (/linkedin\.com/.test(host)) return 'linkedin';
+    if (/jobright\.ai/.test(host)) return 'jobright';
+    if (/indeed\.com/.test(host)) return 'indeed';
+    if (/greenhouse\.io/.test(host)) return 'greenhouse';
+    if (/lever\.co/.test(host)) return 'lever';
+    if (/myworkdayjobs\.com/.test(host)) return 'workday';
     return null;
   }
 
-  function getScraper() {
-    const host = window.location.hostname.replace("www.", "");
-    for (const site of Object.keys(SCRAPERS)) { if (host.includes(site)) return SCRAPERS[site]; }
-    return null;
+  // ─── Text helpers ────────────────────────────────────────────────────────────
+
+  function getText(selector, root = document) {
+    const el = root.querySelector(selector);
+    return el ? el.innerText.trim() : null;
   }
 
-  function genericScrape() {
-    const candidates = [
-      '[class*="description" i]','[class*="job-desc" i]','[id*="description" i]',
-      'article','main','[role="main"]','[class*="content" i]'
-    ];
-    let best = { el: null, len: 0 };
-    for (const sel of candidates) {
-      for (const el of document.querySelectorAll(sel)) {
-        const len = el.innerText?.trim().length || 0;
-        if (len > best.len && len < 50000) best = { el, len };
-      }
-    }
-    const title   = qs(["h1"])?.innerText?.trim() || document.title?.split("|")[0]?.trim() || document.title;
-    const desc    = best.el?.innerText?.trim() || document.body.innerText.substring(0, 8000);
-    return { title, company: null, location: null, description: desc, site: "generic" };
+  function getAttr(selector, attr, root = document) {
+    const el = root.querySelector(selector);
+    return el ? el.getAttribute(attr) : null;
   }
 
-  // Detect visa sponsorship keywords in JD
-  function detectVisaSponsor(text) {
+  function containsText(text, patterns) {
     if (!text) return false;
-    const patterns = [/H1B sponsor/i,/visa sponsor/i,/sponsorship/i,/work authorization/i,/work visa/i,/OPT/i];
-    return patterns.some(p => p.test(text));
+    return patterns.some(p => new RegExp(p, 'i').test(text));
   }
 
-  // Detect salary range
-  function detectSalary(text) {
+  function parseSalary(text) {
     if (!text) return null;
-    const m = text.match(/\$(\d{2,3})[Kk]?\s*[–\-—]\s*\$?(\d{2,3})[Kk]?/);
-    if (m) return `$${m[1]}K–$${m[2]}K`;
+    const m = text.match(/\$[\d,]+(?:k)?(?:\s*[-–]\s*\$[\d,]+(?:k)?)?(?:\s*\/\s*(?:yr|year|hr|hour))?/i);
+    return m ? m[0] : null;
+  }
+
+  function detectRemote(text) {
+    if (!text) return null;
+    if (/\bfully\s+remote\b|\b100%\s+remote\b/i.test(text)) return 'remote';
+    if (/\bremote\b/i.test(text)) return 'remote';
+    if (/\bhybrid\b/i.test(text)) return 'hybrid';
+    if (/\bon.?site\b|\bin.?office\b/i.test(text)) return 'onsite';
     return null;
   }
 
-  // ── AUTOFILL ─────────────────────────────────────────────────────────────────
-  async function fillField(el, value) {
-    if (!el || value === undefined || value === null) return false;
-    const v = String(value);
-    el.focus();
-    // React/Vue synthetic event support
-    const nativeInputSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set
-      || Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
-    if (nativeInputSetter && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) {
-      nativeInputSetter.call(el, v);
-    } else {
-      el.value = v;
-    }
-    el.dispatchEvent(new Event("input",   { bubbles: true }));
-    el.dispatchEvent(new Event("change",  { bubbles: true }));
-    el.dispatchEvent(new Event("blur",    { bubbles: true }));
-    return true;
+  // ─── LinkedIn Scraper ────────────────────────────────────────────────────────
+
+  function scrapeLinkedIn() {
+    // Job detail panel (job search results view)
+    const title =
+      getText('.job-details-jobs-unified-top-card__job-title') ||
+      getText('.jobs-unified-top-card__job-title') ||
+      getText('h1.t-24') ||
+      getText('h1');
+
+    const company =
+      getText('.job-details-jobs-unified-top-card__company-name') ||
+      getText('.jobs-unified-top-card__company-name') ||
+      getText('.jobs-unified-top-card__subtitle-primary-grouping a');
+
+    const location =
+      getText('.job-details-jobs-unified-top-card__bullet') ||
+      getText('.jobs-unified-top-card__bullet');
+
+    const descEl =
+      document.querySelector('.jobs-description__content') ||
+      document.querySelector('.job-details-jobs-unified-top-card__job-description') ||
+      document.querySelector('[class*="description"]');
+
+    const description = descEl ? descEl.innerText.trim() : '';
+
+    const easyApply = !!document.querySelector('.jobs-apply-button--top-card, [data-control-name="jobdetails_topcard_inapply"]');
+
+    const salary = parseSalary(description) || parseSalary(getText('.jobs-unified-top-card__job-insight'));
+
+    const fullText = `${title} ${company} ${location} ${description}`;
+    const remote = detectRemote(fullText);
+    const sponsorship = containsText(description, ['visa sponsor', 'h1b', 'work authorization sponsor']);
+
+    if (!title && !company) return null;
+
+    return { title, company, location, description, salary, remote, sponsorship, easyApply, site: 'linkedin' };
   }
 
-  async function fillByLabel(labelText, value) {
-    for (const label of document.querySelectorAll("label")) {
-      if (label.innerText?.toLowerCase().includes(labelText.toLowerCase())) {
-        const input = label.querySelector("input,textarea")
-          || (label.htmlFor && document.getElementById(label.htmlFor))
-          || label.nextElementSibling?.querySelector?.("input,textarea")
-          || label.nextElementSibling;
-        if (input && (input.tagName === "INPUT" || input.tagName === "TEXTAREA")) {
-          return fillField(input, value);
-        }
+  // ─── Jobright Scraper ────────────────────────────────────────────────────────
+
+  function scrapeJobright() {
+    const title = getText('h1') || getText('[class*="job-title"]');
+    const company = getText('[class*="company-name"]') || getText('[class*="company"]');
+    const location = getText('[class*="location"]');
+    const descEl = document.querySelector('[class*="job-description"], [class*="description"]');
+    const description = descEl ? descEl.innerText.trim() : document.body.innerText.slice(0, 3000);
+
+    const fullText = `${title} ${company} ${location} ${description}`;
+    const salary = parseSalary(fullText);
+    const remote = detectRemote(fullText);
+    const sponsorship = containsText(description, ['visa sponsor', 'h1b', 'work authorization']);
+
+    if (!title) return null;
+    return { title, company, location, description, salary, remote, sponsorship, easyApply: false, site: 'jobright' };
+  }
+
+  // ─── Indeed Scraper ──────────────────────────────────────────────────────────
+
+  function scrapeIndeed() {
+    const title =
+      getText('[data-testid="jobsearch-JobInfoHeader-title"]') ||
+      getText('.jobsearch-JobInfoHeader-title') ||
+      getText('h1');
+
+    const company =
+      getText('[data-testid="inlineHeader-companyName"]') ||
+      getText('.jobsearch-InlineCompanyRating-companyHeader a') ||
+      getText('[class*="company"]');
+
+    const location =
+      getText('[data-testid="job-location"]') ||
+      getText('.jobsearch-JobInfoHeader-subtitle div:last-child');
+
+    const descEl =
+      document.querySelector('#jobDescriptionText') ||
+      document.querySelector('.jobsearch-jobDescriptionText');
+
+    const description = descEl ? descEl.innerText.trim() : '';
+
+    const salary =
+      parseSalary(getText('[data-testid="attribute_snippet_testid"]')) ||
+      parseSalary(description);
+
+    const fullText = `${title} ${company} ${location} ${description}`;
+    const remote = detectRemote(fullText);
+    const sponsorship = containsText(description, ['visa sponsor', 'h1b', 'work authorization sponsor']);
+
+    if (!title) return null;
+    return { title, company, location, description, salary, remote, sponsorship, easyApply: false, site: 'indeed' };
+  }
+
+  // ─── Greenhouse Scraper ──────────────────────────────────────────────────────
+
+  function scrapeGreenhouse() {
+    const title = getText('.app-title') || getText('h1.job-post-name') || getText('h1');
+    const company = getText('.company-name') || getAttr('meta[property="og:site_name"]', 'content');
+    const location = getText('.location') || getText('[class*="location"]');
+    const descEl = document.querySelector('#content') || document.querySelector('.job-description');
+    const description = descEl ? descEl.innerText.trim() : '';
+
+    const fullText = `${title} ${company} ${location} ${description}`;
+    const salary = parseSalary(fullText);
+    const remote = detectRemote(fullText);
+    const sponsorship = containsText(description, ['visa sponsor', 'h1b', 'work authorization']);
+
+    if (!title) return null;
+    return { title, company, location, description, salary, remote, sponsorship, easyApply: false, site: 'greenhouse' };
+  }
+
+  // ─── Lever Scraper ──────────────────────────────────────────────────────────
+
+  function scrapeLever() {
+    const title = getText('.posting-headline h2') || getText('h2') || getText('h1');
+    const company = getAttr('meta[property="og:site_name"]', 'content') || document.title.split(' - ').pop();
+    const location = getText('.location') || getText('.workplaceTypes') || getText('[class*="location"]');
+    const descEl = document.querySelector('.content') || document.querySelector('[class*="posting-description"]');
+    const description = descEl ? descEl.innerText.trim() : '';
+
+    const fullText = `${title} ${company} ${location} ${description}`;
+    const salary = parseSalary(fullText);
+    const remote = detectRemote(fullText);
+    const sponsorship = containsText(description, ['visa sponsor', 'h1b', 'work authorization']);
+
+    if (!title) return null;
+    return { title, company, location, description, salary, remote, sponsorship, easyApply: false, site: 'lever' };
+  }
+
+  // ─── Workday Scraper ─────────────────────────────────────────────────────────
+
+  function scrapeWorkday() {
+    const title =
+      getText('[data-automation-id="jobPostingHeader"]') ||
+      getText('h2[data-automation-id*="title"]') ||
+      getText('h1');
+
+    const company =
+      getAttr('meta[property="og:site_name"]', 'content') ||
+      document.title.split('|').pop().trim();
+
+    const location =
+      getText('[data-automation-id="locations"]') ||
+      getText('[data-automation-id="location"]');
+
+    const descEl =
+      document.querySelector('[data-automation-id="jobPostingDescription"]') ||
+      document.querySelector('[class*="job-description"]');
+
+    const description = descEl ? descEl.innerText.trim() : '';
+
+    const fullText = `${title} ${company} ${location} ${description}`;
+    const salary = parseSalary(fullText);
+    const remote = detectRemote(fullText);
+    const sponsorship = containsText(description, ['visa sponsor', 'h1b', 'work authorization']);
+
+    if (!title) return null;
+    return { title, company, location, description, salary, remote, sponsorship, easyApply: false, site: 'workday' };
+  }
+
+  // ─── Main Scrape ─────────────────────────────────────────────────────────────
+
+  function scrape() {
+    const site = detectSite();
+    if (!site) return;
+
+    let data = null;
+    try {
+      switch (site) {
+        case 'linkedin': data = scrapeLinkedIn(); break;
+        case 'jobright': data = scrapeJobright(); break;
+        case 'indeed': data = scrapeIndeed(); break;
+        case 'greenhouse': data = scrapeGreenhouse(); break;
+        case 'lever': data = scrapeLever(); break;
+        case 'workday': data = scrapeWorkday(); break;
       }
-    }
-    return false;
-  }
-
-  async function fillByAttr(attr, fragment, value) {
-    const el = document.querySelector(`input[${attr}*="${fragment}" i], textarea[${attr}*="${fragment}" i]`);
-    return el ? fillField(el, value) : false;
-  }
-
-  async function fillByPlaceholder(text, value) {
-    const el = document.querySelector(`input[placeholder*="${text}" i], textarea[placeholder*="${text}" i]`);
-    return el ? fillField(el, value) : false;
-  }
-
-  async function autofillPage(profile) {
-    let filled = 0;
-    const p = profile;
-
-    const FIELDS = [
-      // First name
-      { value: p.firstName, tries: [
-        () => fillByAttr("name","first_name",p.firstName),
-        () => fillByAttr("name","firstName",p.firstName),
-        () => fillByAttr("name","fname",p.firstName),
-        () => fillByAttr("id","first_name",p.firstName),
-        () => fillByAttr("id","firstName",p.firstName),
-        () => fillByLabel("first name",p.firstName),
-        () => fillByPlaceholder("first name",p.firstName),
-      ]},
-      // Last name
-      { value: p.lastName, tries: [
-        () => fillByAttr("name","last_name",p.lastName),
-        () => fillByAttr("name","lastName",p.lastName),
-        () => fillByAttr("name","lname",p.lastName),
-        () => fillByAttr("id","last_name",p.lastName),
-        () => fillByLabel("last name",p.lastName),
-        () => fillByPlaceholder("last name",p.lastName),
-      ]},
-      // Full name (some forms)
-      { value: `${p.firstName} ${p.lastName}`, tries: [
-        () => fillByAttr("name","full_name",`${p.firstName} ${p.lastName}`),
-        () => fillByAttr("name","fullName",`${p.firstName} ${p.lastName}`),
-        () => fillByLabel("full name",`${p.firstName} ${p.lastName}`),
-        () => fillByPlaceholder("full name",`${p.firstName} ${p.lastName}`),
-      ]},
-      // Email
-      { value: p.email, tries: [
-        () => fillByAttr("type","email",p.email),
-        () => fillByAttr("name","email",p.email),
-        () => fillByLabel("email",p.email),
-        () => fillByPlaceholder("email",p.email),
-      ]},
-      // Phone
-      { value: p.phone, tries: [
-        () => fillByAttr("type","tel",p.phone),
-        () => fillByAttr("name","phone",p.phone),
-        () => fillByAttr("name","mobile",p.phone),
-        () => fillByLabel("phone",p.phone),
-        () => fillByPlaceholder("phone",p.phone),
-      ]},
-      // LinkedIn
-      { value: p.linkedin, tries: [
-        () => fillByAttr("name","linkedin",p.linkedin),
-        () => fillByLabel("linkedin",p.linkedin),
-        () => fillByPlaceholder("linkedin",p.linkedin),
-      ]},
-      // GitHub
-      { value: p.github, tries: [
-        () => fillByAttr("name","github",p.github),
-        () => fillByLabel("github",p.github),
-        () => fillByPlaceholder("github",p.github),
-      ]},
-      // Website / portfolio
-      { value: p.website || p.portfolio || p.github, tries: [
-        () => fillByAttr("name","website",p.website||p.portfolio||p.github),
-        () => fillByAttr("name","portfolio",p.website||p.portfolio||p.github),
-        () => fillByLabel("website",p.website||p.portfolio||p.github),
-        () => fillByLabel("portfolio",p.website||p.portfolio||p.github),
-      ]},
-    ];
-
-    for (const field of FIELDS) {
-      if (!field.value) continue;
-      for (const tryFn of field.tries) {
-        if (await tryFn()) { filled++; break; }
-      }
+    } catch (e) {
+      console.warn('[JobHunt] Scrape error:', e);
     }
 
-    // Cover letter
-    if (p.coverLetter) {
-      const cl = document.querySelector('textarea[name*="cover" i], textarea[id*="cover" i], #cover_letter, [placeholder*="cover letter" i]');
-      if (cl) { await fillField(cl, p.coverLetter); filled++; }
+    if (data && JSON.stringify(data) !== JSON.stringify(lastJobData)) {
+      lastJobData = data;
+      chrome.runtime.sendMessage({ type: 'JOB_DATA', payload: data }).catch(() => {});
     }
-
-    return { filled };
   }
 
-  // ── MESSAGE HANDLER ───────────────────────────────────────────────────────────
-  chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
-    if (req.action === "ping") { sendResponse({ alive: true }); return; }
+  // ─── SPA URL Change Detection ─────────────────────────────────────────────────
 
-    if (req.action === "scrapeJD") {
-      try {
-        const scraper = getScraper();
-        const data    = scraper ? scraper() : genericScrape();
-        data.url = window.location.href;
-        if (data.description) {
-          data.visaSponsor = detectVisaSponsor(data.description);
-          data.salary      = detectSalary(data.description);
-          data.remote      = /remote/i.test(data.location || "") || /remote/i.test(data.description || "");
-        }
-        if (!data.description || data.description.length < 50) {
-          sendResponse({ success: false, error: "No job description found on this page." });
-        } else {
-          sendResponse({ success: true, data });
-        }
-      } catch (e) {
-        sendResponse({ success: false, error: e.message });
-      }
+  function onUrlChange() {
+    const current = location.href;
+    if (current !== lastUrl) {
+      lastUrl = current;
+      lastJobData = null;
+      clearTimeout(scrapeTimeout);
+      scrapeTimeout = setTimeout(scrape, 1500);
+    }
+  }
+
+  // Observe DOM mutations for SPA navigation
+  const observer = new MutationObserver(onUrlChange);
+  observer.observe(document.body, { subtree: true, childList: true });
+
+  // Also patch history API
+  const origPush = history.pushState.bind(history);
+  const origReplace = history.replaceState.bind(history);
+  history.pushState = function (...args) { origPush(...args); onUrlChange(); };
+  history.replaceState = function (...args) { origReplace(...args); onUrlChange(); };
+  window.addEventListener('popstate', onUrlChange);
+
+  // ─── Message Listener ─────────────────────────────────────────────────────────
+
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (msg.type === 'REQUEST_JOB_DATA') {
+      scrape();
+      sendResponse({ payload: lastJobData });
       return true;
     }
-
-    if (req.action === "autofill") {
-      autofillPage(req.profile)
-        .then(r  => sendResponse({ success: true, result: r }))
-        .catch(e => sendResponse({ success: false, error: e.message }));
+    if (msg.type === 'AUTOFILL_TRIGGER') {
+      chrome.runtime.sendMessage({ type: 'INJECT_AUTOFILL' });
+      sendResponse({ ok: true });
       return true;
     }
   });
+
+  // Initial scrape after page settles
+  setTimeout(scrape, 1500);
+
+  console.log('[JobHunt AI Copilot] Content script loaded on', detectSite() || location.hostname);
 })();

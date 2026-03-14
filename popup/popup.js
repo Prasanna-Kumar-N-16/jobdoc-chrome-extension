@@ -1,972 +1,840 @@
-// popup.js — JobHunt AI Copilot v3
-// 100% designed for Prasanna Kumar Nagaboyina
+// popup/popup.js — Main popup controller for JobHunt AI Copilot v4
+// All event wiring, state management, and UI updates
 
-"use strict";
+import { testConnection, fetchModels, streamGenerate, buildPrompt } from '../utils/ollama.js';
+import { getProfile, saveProfile, getLog, addLogEntry, deleteLogEntry, getStats, incrementStat } from '../utils/storage.js';
+import { extractKeywords, computeMatchScore, detectSite } from '../utils/parser.js';
 
-// ── STATE ─────────────────────────────────────────────────────────────────────
-let state = {
-  currentTab:     "job",
-  ollamaOnline:   false,
-  currentJD:      "",
-  currentJob:     null,   // { title, company, location, site, url, visaSponsor }
-  lastReport:     "",
-  lastResumeHTML: "",
-  lastCoverLetter:"",
-  lastBullets:    "",
-  lastPitch:      "",
-  lastAtsScore:   0,
-  isGenerating:   false,
-  generateMode:   "both",
-  genAbortToken:  null,   // set on generate, used to cancel
-};
+// ─── State ───────────────────────────────────────────────────────────────────
+let currentJobData = null;
+let currentProfile = null;
+let currentMode = 'resume';
+let currentModel = 'llama3';
+let isStreaming = false;
+let matchResult = null;
 
-// ── INIT ──────────────────────────────────────────────────────────────────────
-document.addEventListener("DOMContentLoaded", async () => {
-  await seedIfEmpty();
-  setupTabs();
-  setupListeners();
-  await loadProfileUI();
-  await checkOllamaStatus();
-  await restoreSession();
-  await detectCurrentPage();
-  refreshLogUI();
-  refreshFillUI();
+// ─── DOM Helpers ─────────────────────────────────────────────────────────────
+
+function $(id) { return document.getElementById(id); }
+function $$(sel) { return document.querySelectorAll(sel); }
+
+function showToast(msg, duration = 2000) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), duration);
+}
+
+function setCopyBtn(btn, label = 'Copy') {
+  btn.textContent = label;
+}
+
+function flashCopy(btn) {
+  const orig = btn.textContent;
+  btn.textContent = '✓ Copied';
+  setTimeout(() => (btn.textContent = orig), 1500);
+}
+
+function copyToClipboard(text, btn) {
+  navigator.clipboard.writeText(text || '').then(() => {
+    if (btn) flashCopy(btn);
+  });
+}
+
+// ─── Tab Switching ────────────────────────────────────────────────────────────
+
+const TAB_IDS = ['job', 'generate', 'fill', 'log', 'me', 'setup'];
+
+$$('.p-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    $$('.p-tab').forEach(t => t.classList.remove('on'));
+    $$('.tab-panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('on');
+    const panel = $(`panel-${tab.dataset.tab}`);
+    if (panel) panel.classList.add('active');
+    onTabActivated(tab.dataset.tab);
+  });
 });
 
-// ── TAB SWITCHING ─────────────────────────────────────────────────────────────
-function setupTabs() {
-  document.querySelectorAll(".p-tab").forEach(t => {
-    t.addEventListener("click", () => switchTab(t.dataset.tab));
-  });
-}
-function switchTab(id) {
-  state.currentTab = id;
-  document.querySelectorAll(".p-tab").forEach(t =>
-    t.classList.toggle("on", t.dataset.tab === id)
-  );
-  document.querySelectorAll(".panel").forEach(p =>
-    p.classList.toggle("on", p.id === `panel-${id}`)
-  );
-  if (id === "log")  refreshLogUI();
-  if (id === "fill") refreshFillUI();
-  if (id === "me")   loadProfileUI();
-  if (id === "setup") refreshSetupUI();
-}
-function goToFill() { switchTab("fill"); }
-
-// ── OLLAMA STATUS ─────────────────────────────────────────────────────────────
-async function checkOllamaStatus(silent = false) {
-  const chip = document.getElementById("statusChip");
-  const dot  = document.getElementById("statusDot");
-  const lbl  = document.getElementById("statusLbl");
-  if (!silent) {
-    chip.className = "status-chip";
-    dot.className  = "s-dot";
-    lbl.textContent = "checking…";
+function onTabActivated(tabName) {
+  switch (tabName) {
+    case 'job':      initJobTab(); break;
+    case 'generate': initGenerateTab(); break;
+    case 'fill':     initFillTab(); break;
+    case 'log':      renderLog(); break;
+    case 'me':       initMeTab(); break;
+    case 'setup':    initSetupTab(); break;
   }
-  try {
-    const r = await bg({ action: "checkOllama" });
-    if (r?.online) {
-      state.ollamaOnline = true;
-      chip.className = "status-chip ok";
-      dot.className  = "s-dot ok";
-      lbl.textContent = r.model || "Ollama ✓";
-      hideCors();
-      document.getElementById("offlineNotice").style.display = "none";
-      document.getElementById("setupOnlineNote").style.display = "flex";
-      document.getElementById("setupOfflineNote").style.display = "none";
-      if (r.models?.length) populateModelSelect(r.models);
-    } else {
-      setOffline(r?.error);
+}
+
+// ─── Header Status ────────────────────────────────────────────────────────────
+
+function setHeaderStatus(state, text) {
+  const chip = $('hdr-status');
+  const txt = $('hdr-status-text');
+  chip.className = `p-status ${state}`;
+  txt.textContent = text;
+}
+
+async function checkOllamaStatus() {
+  setHeaderStatus('warn', 'Connecting…');
+  const result = await testConnection();
+  if (result.ok) {
+    setHeaderStatus('ok', `Ollama ✓`);
+    populateModelSelectors(result.models);
+    if (result.models.length > 0 && !result.models.includes(currentModel)) {
+      currentModel = result.models[0];
     }
-  } catch (e) {
-    setOffline(e?.message);
+  } else if (result.error === 'cors') {
+    setHeaderStatus('err', 'CORS Error');
+    showJobCorsState();
+  } else {
+    setHeaderStatus('err', 'Offline');
   }
-}
-function setOffline(reason) {
-  state.ollamaOnline = false;
-  const chip = document.getElementById("statusChip");
-  const dot  = document.getElementById("statusDot");
-  const lbl  = document.getElementById("statusLbl");
-  chip.className = "status-chip err";
-  dot.className  = "s-dot off";
-  const isCors = reason?.includes("403") || reason?.includes("cors") || reason?.includes("CORS");
-  lbl.textContent = isCors ? "CORS Error" : "Offline";
-  if (isCors) showCors();
-  else {
-    hideCors();
-    document.getElementById("offlineNotice").style.display = "";
-  }
-  document.getElementById("setupOnlineNote").style.display = "none";
-  document.getElementById("setupOfflineNote").style.display = "flex";
+  return result;
 }
 
-// ── CORS WIZARD ───────────────────────────────────────────────────────────────
-const CORS_CMDS = {
-  mac: {
-    cmd: `launchctl setenv OLLAMA_ORIGINS "*"\npkill Ollama\nopen /Applications/Ollama.app`,
-    note: "Paste into Terminal. Sets env var permanently. If Ollama isn't in Applications: OLLAMA_ORIGINS=\"*\" ollama serve"
-  },
-  win: {
-    cmd: `setx OLLAMA_ORIGINS "*"\ntaskkill /IM "ollama app.exe" /F\nstart "" "%LOCALAPPDATA%\\Programs\\Ollama\\ollama app.exe"`,
-    note: "Paste into Command Prompt (run as Admin). setx makes it permanent across restarts."
-  },
-  lin: {
-    cmd: `echo 'export OLLAMA_ORIGINS="*"' >> ~/.bashrc\nsource ~/.bashrc\npkill -f "ollama serve"\nOLLAMA_ORIGINS="*" ollama serve &`,
-    note: "Using systemd? sudo systemctl edit ollama → add Environment=OLLAMA_ORIGINS=* → sudo systemctl restart ollama"
-  }
-};
-function showCors() {
-  document.getElementById("corsBox").style.display = "";
-}
-function hideCors() {
-  document.getElementById("corsBox").style.display = "none";
-}
-function showOsCmd(os, el) {
-  document.querySelectorAll(".os-tab").forEach(t => t.classList.remove("on"));
-  el.classList.add("on");
-  const { cmd, note } = CORS_CMDS[os];
-  document.getElementById("cmdText").textContent = cmd;
-  document.getElementById("cmdNote").textContent = note;
-  document.getElementById("cmdArea").style.display = "";
-}
-function copyCmd(el) {
-  navigator.clipboard.writeText(el.textContent).then(() => {
-    el.classList.add("copied");
-    setTimeout(() => el.classList.remove("copied"), 2000);
+function populateModelSelectors(models) {
+  if (!models || models.length === 0) return;
+  const selectors = ['me-model', 'setup-model'];
+  selectors.forEach(id => {
+    const sel = $(id);
+    if (!sel) return;
+    const current = sel.value || currentModel;
+    sel.innerHTML = '';
+    models.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = m;
+      if (m === current) opt.selected = true;
+      sel.appendChild(opt);
+    });
   });
-}
-async function recheckCors() {
-  await checkOllamaStatus();
-  if (state.ollamaOnline) showToast("ok", "Connected! CORS is fixed.");
-  else showToast("err", "Still offline. Make sure Ollama restarted.");
+  // Update gen button label
+  const genLabel = $('gen-model-label');
+  if (genLabel) genLabel.textContent = currentModel;
 }
 
-// ── PAGE DETECTION ────────────────────────────────────────────────────────────
-async function detectCurrentPage() {
+// ─── Job Tab ──────────────────────────────────────────────────────────────────
+
+function initJobTab() {
+  requestJobData();
+}
+
+async function requestJobData() {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id || !tab.url || tab.url.startsWith("chrome://") || tab.url.startsWith("chrome-extension://")) {
-      showJobState("empty");
+    if (!tab?.id) {
+      showJobEmpty();
       return;
     }
-    const result = await chrome.tabs.sendMessage(tab.id, { action: "scrapeJD" }).catch(() => null);
-    if (!result?.success || !result.data) {
-      showJobState("empty");
+
+    const site = detectSite(tab.url || '');
+    if (!site) {
+      showJobEmpty();
       return;
     }
-    const { data } = result;
-    if (!data.description || data.description.length < 50) {
-      showJobState("empty");
-      return;
+
+    try {
+      const response = await chrome.tabs.sendMessage(tab.id, { type: 'REQUEST_JOB_DATA' });
+      if (response && response.payload) {
+        currentJobData = response.payload;
+        renderJobData(currentJobData);
+      } else {
+        showJobEmpty();
+      }
+    } catch {
+      // Content script may not be ready yet
+      showJobEmpty();
     }
-    state.currentJD  = data.description;
-    state.currentJob = data;
-    document.getElementById("jdInput").value = state.currentJD;
-    document.getElementById("charCount").textContent = state.currentJD.length.toLocaleString();
-    showJobCard(data);
-  } catch {
-    showJobState("empty");
+  } catch (e) {
+    showJobEmpty();
   }
 }
 
-function showJobState(mode) {
-  // mode: 'empty' | 'card' | 'progress'
-  document.getElementById("noJobState").style.display    = mode === "empty"    ? "" : "none";
-  document.getElementById("jobCardState").style.display  = mode === "card"     ? "" : "none";
-  document.getElementById("progressZone").style.display  = mode === "progress" ? "" : "none";
+function showJobEmpty() {
+  $('job-empty').classList.remove('hidden');
+  $('job-cors').classList.add('hidden');
+  $('job-data').classList.add('hidden');
 }
 
-function showJobCard(data) {
-  showJobState("card");
-  const src = data.site || "generic";
-  const srcEl = document.getElementById("jcSource");
-  srcEl.textContent = capitalize(src);
-  srcEl.className   = "src-tag " + (src === "linkedin" ? "src-li" : src === "indeed" ? "src-ind" : src === "jobright" ? "src-jr" : "src-gen");
+function showJobCorsState() {
+  $('job-empty').classList.add('hidden');
+  $('job-cors').classList.remove('hidden');
+  $('job-data').classList.add('hidden');
+}
 
-  if (data.easyApply) document.getElementById("jcEasyApply").style.display = "";
-  else document.getElementById("jcEasyApply").style.display = "none";
+function showJobData() {
+  $('job-empty').classList.add('hidden');
+  $('job-cors').classList.add('hidden');
+  $('job-data').classList.remove('hidden');
+}
 
-  document.getElementById("jcTitle").textContent   = data.title || "Unknown Position";
-  document.getElementById("jcCompany").textContent = data.company || "Unknown Company";
+function renderJobData(data) {
+  showJobData();
 
-  if (data.location) {
-    document.getElementById("jcLocSep").style.display = "";
-    document.getElementById("jcLocation").textContent = data.location;
-  }
+  $('job-title').textContent = data.title || 'Unknown Role';
+  $('job-company').textContent = data.company ? `${data.company}${data.location ? ' · ' + data.location : ''}` : '—';
 
   // Chips
-  const chips = document.getElementById("jcChips");
-  chips.innerHTML = "";
-  if (data.visaSponsor) chips.innerHTML += `<span class="chip chip-visa">✓ Visa Sponsor</span>`;
-  if (data.remote || (data.location || "").toLowerCase().includes("remote")) chips.innerHTML += `<span class="chip chip-remote">Remote</span>`;
-  if (data.salary) chips.innerHTML += `<span class="chip chip-sal">${escHtml(data.salary)}</span>`;
+  const chipsEl = $('job-chips');
+  chipsEl.innerHTML = '';
 
-  // Skill match (async)
-  computeSkillMatch(data.description).then(({ pct, matched, missing, partial }) => {
-    if (pct === null) return;
-    const matchRow = document.getElementById("matchRow");
-    matchRow.style.display = "";
-    const fill = document.getElementById("matchFill");
-    const pctEl = document.getElementById("matchPct");
-    setTimeout(() => { fill.style.width = pct + "%"; }, 100);
-    fill.className = "match-fill" + (pct >= 70 ? "" : pct >= 50 ? " mid" : " low");
-    pctEl.textContent = pct + "%";
-    pctEl.className   = "match-pct " + (pct >= 70 ? "pct-hi" : pct >= 50 ? "pct-mid" : "pct-low");
-
-    const skRow = document.getElementById("skRow");
-    skRow.innerHTML = "";
-    matched.slice(0,6).forEach(s => skRow.innerHTML += `<span class="sk sk-y">✓ ${escHtml(s)}</span>`);
-    partial.slice(0,3).forEach(s => skRow.innerHTML += `<span class="sk sk-m">~ ${escHtml(s)}</span>`);
-    missing.slice(0,3).forEach(s => skRow.innerHTML += `<span class="sk sk-n">✗ ${escHtml(s)}</span>`);
-  });
-}
-
-async function computeSkillMatch(jd) {
-  if (!jd) return { pct: null, matched: [], missing: [], partial: [] };
-  try {
-    const settings = await chrome.storage.local.get(["resumeData"]);
-    const rd = JSON.parse(settings.resumeData || "{}");
-    const skills = rd.skills || [];
-    if (!skills.length) return { pct: null, matched: [], missing: [], partial: [] };
-
-    const jdL = jd.toLowerCase();
-    const matched = [], partial = [], missing = [];
-    for (const sk of skills) {
-      const skL = sk.toLowerCase();
-      if (jdL.includes(skL)) matched.push(sk);
-      else if (skL.length > 3 && jdL.includes(skL.substring(0, Math.floor(skL.length * 0.7)))) partial.push(sk);
-    }
-    // Extract top JD keywords not in skills
-    const jdWords = jd.match(/\b[A-Z][a-zA-Z0-9+#.]+\b/g) || [];
-    const jdKeywords = [...new Set(jdWords)].filter(w => w.length > 2 && !skills.some(s => s.toLowerCase() === w.toLowerCase()));
-    jdKeywords.slice(0, 5).forEach(w => {
-      if (!matched.includes(w) && !partial.includes(w)) missing.push(w);
-    });
-
-    const pct = skills.length > 0
-      ? Math.min(99, Math.round(((matched.length + partial.length * 0.5) / Math.min(skills.length, 15)) * 100))
-      : null;
-    return { pct, matched, partial, missing: missing.slice(0, 3) };
-  } catch {
-    return { pct: null, matched: [], missing: [], partial: [] };
+  if (data.site) {
+    const siteNames = { linkedin: 'LinkedIn', jobright: 'Jobright', indeed: 'Indeed', greenhouse: 'Greenhouse', lever: 'Lever', workday: 'Workday' };
+    chipsEl.appendChild(makeChip(siteNames[data.site] || data.site, 'chip-site'));
   }
+  if (data.easyApply) chipsEl.appendChild(makeChip('⚡ Easy Apply', 'chip-easy'));
+  if (data.salary) chipsEl.appendChild(makeChip(data.salary, 'chip-salary'));
+  if (data.remote === 'remote') chipsEl.appendChild(makeChip('Remote', 'chip-remote'));
+  if (data.remote === 'hybrid') chipsEl.appendChild(makeChip('Hybrid', 'chip-hybrid'));
+  if (data.remote === 'onsite') chipsEl.appendChild(makeChip('Onsite', 'chip-onsite'));
+  if (data.sponsorship) chipsEl.appendChild(makeChip('Visa Sponsor', 'chip-visa'));
+
+  // Reset ATS ring
+  const ring = $('ats-ring-circle');
+  ring.style.strokeDashoffset = '188.5';
+  ring.className = 'ats-ring-fill';
+  $('ats-score-num').textContent = '—';
+  $('ats-ring-title').textContent = 'Run Analysis';
+  $('ats-ring-desc').textContent = 'Click Analyze to compute your ATS match score against this job description.';
+  $('match-bars').style.display = 'none';
+  $('skills-section').style.display = 'none';
 }
 
-// ── GENERATE FLOW ─────────────────────────────────────────────────────────────
-function setupListeners() {
-  document.getElementById("btnRefresh").addEventListener("click", () => checkOllamaStatus());
-  document.getElementById("btnCancelAnalysis").addEventListener("click", cancelGeneration);
-  document.getElementById("btnCancelGen").addEventListener("click", cancelGeneration);
-  document.getElementById("btnGenerateApply").addEventListener("click", () => {
-    if (state.currentJD) startGeneration();
-    else {
-      showToast("err", "No JD detected. Paste one in Generate tab.");
-      switchTab("generate");
+function makeChip(text, cls) {
+  const span = document.createElement('span');
+  span.className = `chip ${cls}`;
+  span.textContent = text;
+  return span;
+}
+
+// ─── ATS Analysis ─────────────────────────────────────────────────────────────
+
+$('btn-analyze').addEventListener('click', async () => {
+  if (!currentJobData) { showToast('No job data to analyze'); return; }
+  if (!currentProfile) currentProfile = await getProfile();
+
+  const btn = $('btn-analyze');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner dark"></div> Analyzing…';
+
+  const keywords = extractKeywords(currentJobData.description || '');
+  const userSkills = currentProfile.skills || [];
+  matchResult = computeMatchScore(userSkills, keywords);
+  currentJobData.matchResult = matchResult;
+
+  // Animate ring
+  const overall = matchResult.overall;
+  const circumference = 188.5;
+  const offset = circumference - (overall / 100) * circumference;
+  const ring = $('ats-ring-circle');
+
+  ring.className = 'ats-ring-fill' + (overall >= 80 ? '' : overall >= 60 ? ' warn' : ' bad');
+  setTimeout(() => { ring.style.strokeDashoffset = offset; }, 50);
+
+  $('ats-score-num').textContent = overall;
+
+  const quality = overall >= 80 ? 'Strong match' : overall >= 60 ? 'Decent match' : 'Needs work';
+  $('ats-ring-title').textContent = quality;
+  $('ats-ring-desc').textContent = `${matchResult.matched.length} matched · ${matchResult.partial.length} partial · ${matchResult.missing.length} missing`;
+
+  // Match bars
+  $('match-bars').style.display = 'block';
+  animateBar('bar-overall', 'pct-overall', matchResult.overall);
+  animateBar('bar-skills', 'pct-skills', matchResult.skills);
+  animateBar('bar-exp', 'pct-exp', matchResult.experience);
+
+  // Skill chips
+  $('skills-section').style.display = 'block';
+  const chipsEl = $('sk-chips');
+  chipsEl.innerHTML = '';
+
+  matchResult.matched.slice(0, 15).forEach(k => chipsEl.appendChild(makeSkChip(k, 'sk-y')));
+  matchResult.partial.slice(0, 10).forEach(k => chipsEl.appendChild(makeSkChip(k, 'sk-m')));
+  matchResult.missing.slice(0, 15).forEach(k => chipsEl.appendChild(makeSkChip(k, 'sk-n')));
+
+  btn.disabled = false;
+  btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg> Re-analyze`;
+});
+
+function animateBar(barId, pctId, value) {
+  const bar = $(barId);
+  const pct = $(pctId);
+  const cls = value >= 80 ? '' : value >= 60 ? ' warn' : ' bad';
+  bar.className = `match-bar-fill${cls}`;
+  setTimeout(() => { bar.style.width = value + '%'; }, 50);
+  pct.textContent = value + '%';
+}
+
+function makeSkChip(text, cls) {
+  const span = document.createElement('span');
+  span.className = `sk ${cls}`;
+  span.textContent = text;
+  return span;
+}
+
+// Log current job application
+$('btn-log-job').addEventListener('click', async () => {
+  if (!currentJobData) { showToast('No job to log'); return; }
+  await addLogEntry({
+    company: currentJobData.company || 'Unknown',
+    role: currentJobData.title || 'Unknown',
+    date: new Date().toISOString().split('T')[0],
+    status: 'Applied',
+    source: currentJobData.site || ''
+  });
+  await incrementStat('applied');
+  showToast('✓ Application logged');
+  await chrome.runtime.sendMessage({ type: 'INCREMENT_STAT', key: 'applied' }).catch(() => {});
+});
+
+// Go to Generate tab
+$('btn-go-generate').addEventListener('click', () => {
+  $$('.p-tab').forEach(t => t.classList.remove('on'));
+  $$('.tab-panel').forEach(p => p.classList.remove('active'));
+  const genTab = document.querySelector('.p-tab[data-tab="generate"]');
+  if (genTab) genTab.classList.add('on');
+  $('panel-generate').classList.add('active');
+  onTabActivated('generate');
+});
+
+// CORS test button on job tab
+$('job-cors-test-btn').addEventListener('click', async () => {
+  await checkOllamaStatus();
+});
+
+// CORS OS tab switching (job tab)
+$$('#job-cors-os-tabs .os-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    $$('#job-cors-os-tabs .os-tab').forEach(t => t.classList.remove('on'));
+    tab.classList.add('on');
+    const os = tab.dataset.os;
+    [$('job-cors-mac'), $('job-cors-win'), $('job-cors-linux')].forEach(p => p.classList.remove('on'));
+    $(`job-cors-${os}`).classList.add('on');
+  });
+});
+
+// ─── Generate Tab ─────────────────────────────────────────────────────────────
+
+async function initGenerateTab() {
+  // Show warning if no job
+  if (currentJobData) {
+    $('gen-no-job').classList.add('hidden');
+  } else {
+    $('gen-no-job').classList.remove('hidden');
+  }
+  // Update model label from stored settings
+  try {
+    const { settings } = await chrome.storage.local.get('settings');
+    if (settings?.model) {
+      currentModel = settings.model;
+      const lbl = $('gen-model-label');
+      if (lbl) lbl.textContent = currentModel;
     }
-  });
-  document.getElementById("btnGenerateMain").addEventListener("click", () => {
-    const jd = document.getElementById("jdInput").value.trim();
-    if (!jd || jd.length < 30) { showToast("err", "Please paste a job description first."); return; }
-    state.currentJD = jd;
-    startGeneration();
-  });
-  document.getElementById("btnOpenJob").addEventListener("click", () => {
-    if (state.currentJob?.url) chrome.tabs.create({ url: state.currentJob.url });
-  });
-  document.getElementById("jdInput").addEventListener("input", function() {
-    document.getElementById("charCount").textContent = this.value.length.toLocaleString();
-    state.currentJD = this.value;
-  });
-  document.querySelectorAll(".mode-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".mode-btn").forEach(b => b.classList.remove("on"));
-      btn.classList.add("on");
-      state.generateMode = btn.dataset.mode;
-    });
-  });
-  document.getElementById("btnSaveProfile").addEventListener("click", saveProfile);
-  document.getElementById("btnResetProfile").addEventListener("click", resetToDefaults);
-  document.getElementById("btnAutofill").addEventListener("click", doAutofill);
-  document.getElementById("btnTestConnection").addEventListener("click", async () => {
-    await checkOllamaStatus();
-    refreshSetupUI();
-  });
+  } catch { /* settings not yet set */ }
 }
 
-async function startGeneration() {
-  if (state.isGenerating) return;
-  if (!state.ollamaOnline) {
-    const r = await bg({ action: "checkOllama" }).catch(() => null);
-    if (!r?.online) { showToast("err", "Ollama is offline. Check Setup tab."); showCors(); return; }
-    state.ollamaOnline = true;
+// Mode selection
+$$('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    $$('.mode-btn').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    currentMode = btn.dataset.mode;
+  });
+});
+
+// Main generate button
+$('btn-generate').addEventListener('click', () => runGenerate());
+
+// Custom prompt send button
+$('btn-send-custom').addEventListener('click', () => {
+  const custom = $('custom-prompt').value.trim();
+  if (!custom) return;
+  runGenerate(custom);
+});
+
+async function runGenerate(customInstruction = null) {
+  if (isStreaming) return;
+  if (!currentProfile) currentProfile = await getProfile();
+
+  // Get model from settings
+  const { settings } = await chrome.storage.local.get('settings').catch(() => ({ settings: null }));
+  currentModel = settings?.model || currentModel;
+
+  let prompt = buildPrompt(currentMode, currentProfile, currentJobData);
+  if (customInstruction) {
+    prompt = `${prompt}\n\nAdditional instruction: ${customInstruction}`;
   }
 
-  state.isGenerating = true;
-  const jd = state.currentJD || document.getElementById("jdInput").value.trim();
-  if (!jd || jd.length < 30) { state.isGenerating = false; showToast("err", "Paste a job description first."); return; }
+  const box = $('output-box');
+  const btn = $('btn-generate');
+  isStreaming = true;
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Generating…';
 
-  // Switch to generate tab and show progress
-  switchTab("generate");
-  document.getElementById("genProgressZone").style.display = "";
-  document.getElementById("genMainBtn").style.display = "none";
-  document.getElementById("genResults").style.display = "none";
-  document.getElementById("jdInputArea").style.display = "none";
-  document.getElementById("genStreamBox").textContent = "";
-  document.getElementById("genProgressMsg").textContent = "Sending to Ollama…";
+  // Clear output and add cursor
+  box.innerHTML = '<span id="stream-cursor" class="cursor"></span>';
 
-  // Also show progress on job tab
-  if (state.currentTab === "job") showJobState("progress");
+  let fullText = '';
 
-  // Get settings
-  const settings = await chrome.storage.local.get([
-    "firstName","lastName","email","phone","location","linkedin","github","website","portfolio",
-    "resumeData","ollamaUrl","ollamaModel","visaStatus"
-  ]);
-  const mode = state.generateMode;
-  const custom = document.getElementById("customInstructions").value.trim();
-
-  try {
-    const result = await bg({
-      action: "generate",
-      jd,
-      profile: settings,
-      mode,
-      customInstructions: custom
-    });
-
-    state.isGenerating = false;
-    document.getElementById("genProgressZone").style.display = "none";
-    document.getElementById("jdInputArea").style.display = "";
-    showJobState(state.currentJob ? "card" : "empty");
-
-    if (!result.success) {
-      document.getElementById("genMainBtn").style.display = "";
-      if (result.error === "CANCELLED") { showToast("ok", "Generation cancelled."); return; }
-      if (result.error?.includes("403") || result.error?.includes("CORS")) showCors();
-      else if (result.error?.includes("not found") || result.error?.includes("404")) {
-        showToast("err", `Model not found. Run: ollama pull ${await getModel()}`);
+  await streamGenerate(
+    prompt,
+    currentModel,
+    (token) => {
+      fullText += token;
+      // Insert before cursor
+      const cursor = $('stream-cursor');
+      if (cursor) {
+        box.insertBefore(document.createTextNode(token), cursor);
       } else {
-        showToast("err", result.error || "Generation failed.");
+        box.textContent += token;
       }
-      document.getElementById("genMainBtn").style.display = "";
-      return;
+      box.scrollTop = box.scrollHeight;
+    },
+    async () => {
+      // Done
+      const cursor = $('stream-cursor');
+      if (cursor) cursor.remove();
+      isStreaming = false;
+      btn.disabled = false;
+      btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M5 12h14M12 5l7 7-7 7"/></svg> Generate with <span id="gen-model-label">${currentModel}</span>`;
+      await incrementStat('generated');
+      chrome.runtime.sendMessage({ type: 'INCREMENT_STAT', key: 'generated' }).catch(() => {});
+    },
+    (err) => {
+      const cursor = $('stream-cursor');
+      if (cursor) cursor.remove();
+      isStreaming = false;
+      btn.disabled = false;
+      btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M5 12h14M12 5l7 7-7 7"/></svg> Generate with <span id="gen-model-label">${currentModel}</span>`;
+
+      let errMsg = 'Generation failed.';
+      if (err === 'cors') errMsg = 'CORS error — restart Ollama with OLLAMA_ORIGINS=*';
+      else if (err === 'offline') errMsg = 'Ollama is offline. Start it with: ollama serve';
+      else if (err) errMsg = `Error: ${err}`;
+
+      box.textContent = `⚠ ${errMsg}`;
+      setHeaderStatus('err', err === 'cors' ? 'CORS Error' : 'Offline');
     }
+  );
+}
 
-    // Store results
-    state.lastReport      = result.report     || "";
-    state.lastResumeHTML  = result.resumeHTML  || "";
-    state.lastCoverLetter = result.coverLetter || "";
-    state.lastBullets     = result.bullets     || "";
-    state.lastPitch       = result.pitch       || "";
-    state.lastAtsScore    = result.atsScore    || 0;
+// Copy output button
+$('btn-copy-output').addEventListener('click', () => {
+  const text = $('output-box').textContent;
+  copyToClipboard(text, $('btn-copy-output'));
+});
 
-    // Save session
-    await chrome.storage.local.set({ lastSession: {
-      report: state.lastReport, resumeHTML: state.lastResumeHTML,
-      coverLetter: state.lastCoverLetter, bullets: state.lastBullets,
-      pitch: state.lastPitch, atsScore: state.lastAtsScore,
-      jd, savedAt: Date.now(), job: state.currentJob
-    }});
+// ─── Fill Tab ─────────────────────────────────────────────────────────────────
 
-    // Log the application
-    await logApplication(state.currentJob, jd);
+async function initFillTab() {
+  if (!currentProfile) currentProfile = await getProfile();
+  const p = currentProfile;
 
-    renderGenerationResults();
-    refreshFillUI();
-    refreshLogUI();
+  function setField(id, val) {
+    const el = $(id);
+    if (el) {
+      el.textContent = val || '—';
+      el.classList.toggle('empty', !val);
+    }
+  }
 
-    // Show "view report" button on job tab if there
-    document.getElementById("genMainBtn").style.display = "";
+  setField('af-name', p.name);
+  setField('af-email', p.email);
+  setField('af-phone', p.phone);
+  setField('af-linkedin', p.linkedin);
+  setField('af-github', p.github);
+  setField('af-summary', p.summary);
+}
 
+// Autofill kit copy buttons
+$$('.af-copy').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const fieldId = btn.dataset.field;
+    const val = $(fieldId)?.textContent;
+    if (val && val !== '—') copyToClipboard(val, btn);
+    else showToast('Nothing to copy — fill out your profile first');
+  });
+});
+
+// Auto-fill page
+$('btn-autofill').addEventListener('click', async () => {
+  const btn = $('btn-autofill');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Filling…';
+
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) { showToast('No active tab found'); return; }
+
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ['content/autofill.js']
+    });
+    showToast('✓ Autofill injected');
   } catch (e) {
-    state.isGenerating = false;
-    document.getElementById("genProgressZone").style.display = "none";
-    document.getElementById("jdInputArea").style.display = "";
-    document.getElementById("genMainBtn").style.display = "";
-    showJobState(state.currentJob ? "card" : "empty");
-    if (!isPortClosed(e)) showToast("err", e?.message || "Unknown error");
-  }
-}
-
-function renderGenerationResults() {
-  document.getElementById("genResults").style.display = "";
-  document.getElementById("genBanner").style.display = "none";
-
-  // ATS Score
-  if (state.lastAtsScore > 0) {
-    const scoreBand = document.getElementById("scoreBand");
-    scoreBand.style.display = "";
-    const num = document.getElementById("scoreNum");
-    num.textContent = state.lastAtsScore;
-    const circle = document.getElementById("scoreCircle");
-    const pct = state.lastAtsScore;
-    const color = pct >= 75 ? "var(--teal)" : pct >= 50 ? "var(--amber)" : "var(--red)";
-    circle.style.background = `conic-gradient(${color} 0% ${pct}%, var(--rule2) ${pct}% 100%)`;
-    document.getElementById("scoreVerdict").textContent = pct >= 75 ? "Strong Match" : pct >= 50 ? "Moderate Match" : "Needs Work";
-    document.getElementById("reportActions").style.display = "";
-    setTimeout(() => document.getElementById("scoreBarFill").style.width = pct + "%", 100);
-  }
-
-  const mode = state.generateMode;
-  // Bullets
-  if (state.lastBullets && (mode === "both" || mode === "bullets")) {
-    document.getElementById("bulletsWrap").style.display = "";
-    document.getElementById("bulletsOut").textContent = state.lastBullets;
-  }
-  // Cover
-  if (state.lastCoverLetter && (mode === "both" || mode === "cover")) {
-    document.getElementById("coverWrap").style.display = "";
-    document.getElementById("coverOut").textContent = state.lastCoverLetter;
-  }
-  // Pitch
-  if (state.lastPitch && mode === "pitch") {
-    document.getElementById("pitchWrap").style.display = "";
-    document.getElementById("pitchOut").textContent = state.lastPitch;
-  }
-
-  // Full report
-  if (state.lastReport) {
-    document.getElementById("reportWrap").style.display = "";
-    document.getElementById("reportContent").innerHTML = mdToHtml(state.lastReport);
-  }
-}
-
-function retryGeneration() {
-  if (!state.currentJD && !document.getElementById("jdInput").value.trim()) {
-    showToast("err", "No JD found. Paste one in the Generate tab.");
-    return;
-  }
-  // Reset outputs
-  state.lastReport = ""; state.lastResumeHTML = ""; state.lastCoverLetter = "";
-  state.lastBullets = ""; state.lastPitch = ""; state.lastAtsScore = 0;
-  document.getElementById("genResults").style.display = "none";
-  document.getElementById("scoreBand").style.display = "none";
-  document.getElementById("reportActions").style.display = "none";
-  document.getElementById("bulletsWrap").style.display = "none";
-  document.getElementById("coverWrap").style.display = "none";
-  document.getElementById("pitchWrap").style.display = "none";
-  document.getElementById("reportWrap").style.display = "none";
-  document.getElementById("gapsWrap").style.display = "none";
-  document.getElementById("scoreBarFill").style.width = "0";
-  startGeneration();
-}
-
-function clearGeneration() {
-  chrome.storage.local.remove("lastSession");
-  state.lastReport = ""; state.lastResumeHTML = ""; state.lastCoverLetter = "";
-  state.lastBullets = ""; state.lastPitch = ""; state.lastAtsScore = 0;
-  document.getElementById("genResults").style.display = "none";
-  document.getElementById("genBanner").style.display = "none";
-  document.getElementById("scoreBand").style.display = "none";
-  document.getElementById("reportActions").style.display = "none";
-  document.getElementById("bulletsWrap").style.display = "none";
-  document.getElementById("coverWrap").style.display = "none";
-  document.getElementById("pitchWrap").style.display = "none";
-  document.getElementById("reportWrap").style.display = "none";
-  document.getElementById("gapsWrap").style.display = "none";
-  document.getElementById("jdInput").value = "";
-  document.getElementById("charCount").textContent = "0";
-  document.getElementById("genMainBtn").style.display = "";
-  document.getElementById("jdInputArea").style.display = "";
-  refreshFillUI();
-}
-
-async function cancelGeneration() {
-  try { await bg({ action: "cancelGeneration" }); } catch {}
-  state.isGenerating = false;
-  document.getElementById("genProgressZone").style.display = "none";
-  document.getElementById("progressZone").style.display = "none";
-  document.getElementById("genMainBtn").style.display = "";
-  document.getElementById("jdInputArea").style.display = "";
-  showJobState(state.currentJob ? "card" : "empty");
-  showToast("ok", "Generation cancelled.");
-}
-
-// ── SESSION RESTORE ───────────────────────────────────────────────────────────
-async function restoreSession() {
-  const { lastSession } = await chrome.storage.local.get("lastSession");
-  if (!lastSession) return;
-
-  state.lastReport      = lastSession.report      || "";
-  state.lastResumeHTML  = lastSession.resumeHTML   || "";
-  state.lastCoverLetter = lastSession.coverLetter  || "";
-  state.lastBullets     = lastSession.bullets      || "";
-  state.lastPitch       = lastSession.pitch        || "";
-  state.lastAtsScore    = lastSession.atsScore     || 0;
-
-  if (lastSession.jd) {
-    state.currentJD = lastSession.jd;
-    document.getElementById("jdInput").value = lastSession.jd;
-    document.getElementById("charCount").textContent = lastSession.jd.length.toLocaleString();
-  }
-
-  if (state.lastReport || state.lastBullets || state.lastCoverLetter) {
-    renderGenerationResults();
-    const banner = document.getElementById("genBanner");
-    banner.style.display = "";
-    document.getElementById("genBannerText").textContent =
-      "📂 Restored — " + new Date(lastSession.savedAt).toLocaleString();
-  }
-}
-
-document.getElementById("btnClearGen")?.addEventListener("click", clearGeneration);
-
-// ── STREAM TOKEN LISTENER ─────────────────────────────────────────────────────
-chrome.runtime.onMessage.addListener((msg) => {
-  if (msg.action === "streamToken") {
-    const box = document.getElementById("genStreamBox");
-    box.textContent += msg.token;
-    box.scrollTop = box.scrollHeight;
-    const len = box.textContent.length;
-    document.getElementById("genProgressMsg").textContent = `Generating… ${len.toLocaleString()} chars`;
+    showToast('Could not inject autofill: ' + (e.message || 'Check permissions'));
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M12 5v14M5 12h14"/></svg> Auto-fill Page`;
   }
 });
 
-// ── DOWNLOAD / PREVIEW ────────────────────────────────────────────────────────
-async function downloadResume() {
-  if (!state.lastResumeHTML) { showToast("err","Generate a report first."); return; }
-  const s = await chrome.storage.local.get(["firstName","lastName"]);
-  try {
-    await bg({ action:"download", content:state.lastResumeHTML,
-      filename:`Resume_${s.firstName}_${s.lastName}.html`, mime:"text/html" });
-  } catch (e) { if (!isPortClosed(e)) showToast("err", e?.message); }
+// Clear fields
+$('btn-clear-fields').addEventListener('click', async () => {
+  if (!confirm('Clear all autofill kit values? This does not delete your profile.')) return;
+  ['af-name', 'af-email', 'af-phone', 'af-linkedin', 'af-github', 'af-summary'].forEach(id => {
+    const el = $(id);
+    if (el) { el.textContent = '—'; el.classList.add('empty'); }
+  });
+  showToast('Fields cleared');
+});
+
+// ─── Log Tab ──────────────────────────────────────────────────────────────────
+
+async function renderLog() {
+  const [log, stats] = await Promise.all([getLog(), getStats()]);
+
+  // Stats
+  $('stat-applied').textContent = stats.applied || 0;
+  $('stat-generated').textContent = stats.generated || 0;
+  $('stat-filled').textContent = stats.filled || 0;
+  $('stat-saved').textContent = stats.saved || 0;
+
+  // Log list
+  const listEl = $('log-list');
+  const emptyEl = $('log-empty');
+  listEl.innerHTML = '';
+
+  if (!log || log.length === 0) {
+    emptyEl.style.display = 'flex';
+    return;
+  }
+
+  emptyEl.style.display = 'none';
+  log.forEach(entry => listEl.appendChild(makeLogEntry(entry)));
 }
 
-async function downloadReport() {
-  if (!state.lastReport) { showToast("err","Generate a report first."); return; }
-  const s = await chrome.storage.local.get(["firstName","lastName"]);
-  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
-<title>ATS Report</title><style>
-body{font-family:Georgia,serif;max-width:820px;margin:40px auto;padding:20px;color:#1a1a1a;line-height:1.65;}
-h2{font-size:14pt;color:#1e40af;margin-top:24px;border-bottom:1px solid #cbd5e1;padding-bottom:4px;}
-h3{font-size:12pt;color:#374151;margin-top:16px;}
-table{width:100%;border-collapse:collapse;margin:10px 0;}
-th{background:#f1f5f9;font-weight:700;padding:8px 10px;border:1px solid #cbd5e1;text-align:left;}
-td{padding:8px 10px;border:1px solid #cbd5e1;}tr:nth-child(even)td{background:#f8fafc;}
-ul{padding-left:18px;}li{margin-bottom:3px;}@media print{body{margin:0;}}
-</style></head><body>
-<h1>ATS Analysis Report</h1>
-<p><strong>Candidate:</strong> ${s.firstName} ${s.lastName} | <strong>Generated:</strong> ${new Date().toLocaleDateString()}</p><hr>
-${mdToHtml(state.lastReport)}
-</body></html>`;
-  try {
-    await bg({ action:"download", content:html,
-      filename:`ATS_Report_${s.firstName}_${s.lastName}.html`, mime:"text/html" });
-  } catch (e) { if (!isPortClosed(e)) showToast("err", e?.message); }
-}
+function makeLogEntry(entry) {
+  const div = document.createElement('div');
+  div.className = 'log-entry';
+  div.dataset.id = entry.id;
 
-function previewResume() {
-  if (!state.lastResumeHTML) { showToast("err","Generate a resume first."); return; }
-  const blob = new Blob([state.lastResumeHTML], { type: "text/html" });
-  chrome.tabs.create({ url: URL.createObjectURL(blob) });
-}
+  const statusClass = (entry.status || 'applied').toLowerCase();
 
-// ── AUTOFILL ──────────────────────────────────────────────────────────────────
-async function doAutofill() {
-  const s = await chrome.storage.local.get([
-    "firstName","lastName","email","phone","location","linkedin","github","website","portfolio"
-  ]);
-  s.coverLetter = state.lastCoverLetter || "";
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) { showToast("err","No active tab found."); return; }
-  try {
-    const r = await bg({ action:"autofillTab", tabId: tab.id, profile: s });
-    const fillStatus = document.getElementById("fillStatus");
-    if (r?.success) {
-      showToast("ok", `✓ Filled ${r.result?.filled || 0} fields`);
-      fillStatus.textContent = `✓ ${r.result?.filled || 0} fields filled on this page`;
-      fillStatus.style.color = "var(--teal-b)";
-    } else {
-      showToast("err", r?.error || "Partial fill — review manually.");
-      fillStatus.textContent = "⚠ " + (r?.error || "Some fields may need manual entry");
-      fillStatus.style.color = "var(--amber)";
+  div.innerHTML = `
+    <div class="log-info">
+      <div class="log-company">${escape(entry.company)}</div>
+      <div class="log-role">${escape(entry.role)}</div>
+    </div>
+    <span class="log-date">${entry.date || ''}</span>
+    <span class="log-status ${statusClass}">${entry.status || 'Applied'}</span>
+    <button class="log-delete" title="Delete entry">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  `;
+
+  div.querySelector('.log-delete').addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const confirmed = confirm(`Remove "${entry.role}" at "${entry.company}"?`);
+    if (!confirmed) return;
+    await deleteLogEntry(entry.id);
+    div.remove();
+    showToast('Entry removed');
+    // Check if list is now empty
+    const listEl = $('log-list');
+    if (!listEl.querySelector('.log-entry')) {
+      $('log-empty').style.display = 'flex';
     }
-  } catch (e) {
-    if (!isPortClosed(e)) showToast("err", e?.message || "Autofill failed");
+  });
+
+  return div;
+}
+
+function escape(str) {
+  if (!str) return '';
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ─── Me Tab (Profile) ─────────────────────────────────────────────────────────
+
+async function initMeTab() {
+  currentProfile = await getProfile();
+  const { settings } = await chrome.storage.local.get('settings').catch(() => ({ settings: null }));
+  if (settings?.model) currentModel = settings.model;
+
+  // Populate form fields
+  $('me-name').value = currentProfile.name || '';
+  $('me-email').value = currentProfile.email || '';
+  $('me-phone').value = currentProfile.phone || '';
+  $('me-linkedin').value = currentProfile.linkedin || '';
+  $('me-github').value = currentProfile.github || '';
+  $('me-summary').value = currentProfile.summary || '';
+
+  // Render skill tags
+  renderSkillTags(currentProfile.skills || []);
+
+  // Model selector
+  const modelSel = $('me-model');
+  if (modelSel && settings?.model) {
+    // Try to select matching option
+    for (const opt of modelSel.options) {
+      if (opt.value === settings.model) { opt.selected = true; break; }
+    }
   }
 }
 
-function refreshFillUI() {
-  const hasKit = !!(state.lastCoverLetter || state.lastBullets);
-  document.getElementById("noKitState").style.display   = hasKit ? "none" : "";
-  document.getElementById("kitReadyState").style.display = hasKit ? "" : "none";
+function renderSkillTags(skills) {
+  const container = $('skill-tags');
+  container.innerHTML = '';
+  (skills || []).forEach(skill => {
+    const tag = document.createElement('span');
+    tag.className = 'skill-tag';
+    tag.textContent = skill;
 
-  if (state.lastCoverLetter) {
-    document.getElementById("fillCoverWrap").style.display = "";
-    document.getElementById("fillCoverOut").textContent    = state.lastCoverLetter;
-  }
+    const xBtn = document.createElement('button');
+    xBtn.className = 'skill-tag-x';
+    xBtn.textContent = '×';
+    xBtn.addEventListener('click', () => {
+      tag.remove();
+    });
 
-  // Populate kit fields from profile
-  chrome.storage.local.get(["firstName","lastName","email","phone","linkedin","github"]).then(s => {
-    const el = (id, v) => { const e = document.getElementById(id); if (e && v) e.textContent = v; };
-    el("fillName", `${s.firstName || ""} ${s.lastName || ""}`.trim());
-    el("fillEmail",   s.email    || "");
-    el("fillPhone",   s.phone    || "");
-    el("fillLinkedin",s.linkedin || "");
-    el("fillGithub",  s.github   || "");
+    tag.appendChild(xBtn);
+    container.appendChild(tag);
   });
 }
 
-// ── APPLICATION LOG ───────────────────────────────────────────────────────────
-async function logApplication(job, jd) {
-  if (!job?.title && !job?.company) return;
-  const { appLog = [] } = await chrome.storage.local.get("appLog");
-  const entry = {
-    id:       Date.now(),
-    title:    job?.title    || "Unknown Position",
-    company:  job?.company  || "Unknown Company",
-    location: job?.location || "",
-    url:      job?.url      || "",
-    site:     job?.site     || "generic",
-    status:   "applied",
-    jd:       (jd || "").substring(0, 500),
-    appliedAt: Date.now()
+// Add skill on Enter or button click
+$('me-skills-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); addSkillFromInput(); }
+});
+$('btn-add-skill').addEventListener('click', addSkillFromInput);
+
+function addSkillFromInput() {
+  const input = $('me-skills-input');
+  const raw = input.value.trim();
+  if (!raw) return;
+
+  // Support comma-separated
+  const skills = raw.split(',').map(s => s.trim()).filter(Boolean);
+  skills.forEach(skill => {
+    const tag = document.createElement('span');
+    tag.className = 'skill-tag';
+    tag.textContent = skill;
+
+    const xBtn = document.createElement('button');
+    xBtn.className = 'skill-tag-x';
+    xBtn.textContent = '×';
+    xBtn.addEventListener('click', () => tag.remove());
+
+    tag.appendChild(xBtn);
+    $('skill-tags').appendChild(tag);
+  });
+
+  input.value = '';
+}
+
+// Auto-save on blur (individual fields)
+['me-name', 'me-email', 'me-phone', 'me-linkedin', 'me-github', 'me-summary'].forEach(id => {
+  const el = $(id);
+  if (el) {
+    el.addEventListener('blur', async () => {
+      await quickSaveField(id);
+    });
+  }
+});
+
+async function quickSaveField(id) {
+  const fieldMap = {
+    'me-name': 'name', 'me-email': 'email', 'me-phone': 'phone',
+    'me-linkedin': 'linkedin', 'me-github': 'github', 'me-summary': 'summary'
   };
-  appLog.unshift(entry);
-  await chrome.storage.local.set({ appLog: appLog.slice(0, 200) });
+  const key = fieldMap[id];
+  if (!key) return;
+  const val = $(id).value;
+  await saveProfile({ [key]: val });
+  if (currentProfile) currentProfile[key] = val;
 }
 
-async function logCurrentJob() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  const job = state.currentJob || { title: tab?.title || "Unknown", company: "", url: tab?.url || "", site: "generic" };
-  await logApplication(job, state.currentJD);
-  refreshLogUI();
-  showToast("ok", "Application logged.");
-}
+// Save profile button
+$('btn-save-profile').addEventListener('click', async () => {
+  const btn = $('btn-save-profile');
+  btn.disabled = true;
 
-function refreshLogUI() {
-  chrome.storage.local.get("appLog").then(({ appLog = [] }) => {
-    const total     = appLog.length;
-    const interview = appLog.filter(a => a.status === "interview").length;
-    const offer     = appLog.filter(a => a.status === "offer").length;
-    const rejected  = appLog.filter(a => a.status === "rejected").length;
+  // Collect skills from rendered tags
+  const skills = [...$$('#skill-tags .skill-tag')].map(t => {
+    // tag text content includes the × character, strip it
+    return t.childNodes[0]?.textContent?.trim() || '';
+  }).filter(Boolean);
 
-    document.getElementById("statTotal").textContent     = total;
-    document.getElementById("statInterview").textContent = interview;
-    document.getElementById("statOffer").textContent     = offer;
-    document.getElementById("statRejected").textContent  = rejected;
+  const profileData = {
+    name: $('me-name').value.trim(),
+    email: $('me-email').value.trim(),
+    phone: $('me-phone').value.trim(),
+    linkedin: $('me-linkedin').value.trim(),
+    github: $('me-github').value.trim(),
+    summary: $('me-summary').value.trim(),
+    skills
+  };
 
-    const list = document.getElementById("logList");
-    const empty = document.getElementById("logEmpty");
-    if (!total) { list.innerHTML = ""; empty.style.display = ""; return; }
-    empty.style.display = "none";
+  currentProfile = await saveProfile(profileData);
 
-    list.innerHTML = appLog.slice(0, 20).map(app => {
-      const barClass = app.status === "interview" ? "lb-int" : app.status === "rejected" ? "lb-rej" : app.status === "offer" ? "lb-int" : "lb-app";
-      const badgeClass = app.status === "interview" ? "sb-int" : app.status === "rejected" ? "sb-rej" : app.status === "offer" ? "sb-int" : "sb-app";
-      const date = new Date(app.appliedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-      return `<div class="log-item" style="margin-bottom:6px" onclick="updateLogStatus(${app.id})">
-        <div class="log-bar ${barClass}"></div>
-        <div class="log-co">${escHtml(app.company)}</div>
-        <div class="log-role">${escHtml(app.title)}</div>
-        <div class="log-meta">
-          <span class="status-badge ${badgeClass}">${capitalize(app.status)}</span>
-          <span class="log-date">${date}</span>
-          ${app.url ? `<span class="log-link" onclick="event.stopPropagation();chrome.tabs.create({url:'${escHtml(app.url)}'})">view →</span>` : ""}
-        </div>
-      </div>`;
-    }).join("");
-  });
-}
+  // Save model setting
+  const selectedModel = $('me-model').value;
+  if (selectedModel) {
+    currentModel = selectedModel;
+    const { settings } = await chrome.storage.local.get('settings').catch(() => ({ settings: {} }));
+    await chrome.storage.local.set({ settings: { ...(settings || {}), model: selectedModel } });
+    const lbl = $('gen-model-label');
+    if (lbl) lbl.textContent = selectedModel;
 
-async function updateLogStatus(id) {
-  const STATUSES = ["applied","interview","offer","rejected","saved"];
-  const { appLog = [] } = await chrome.storage.local.get("appLog");
-  const idx = appLog.findIndex(a => a.id === id);
-  if (idx === -1) return;
-  const cur = appLog[idx].status;
-  const next = STATUSES[(STATUSES.indexOf(cur) + 1) % STATUSES.length];
-  appLog[idx].status = next;
-  await chrome.storage.local.set({ appLog });
-  refreshLogUI();
-  showToast("ok", `Status → ${capitalize(next)}`);
-}
-
-async function exportCSV() {
-  const { appLog = [] } = await chrome.storage.local.get("appLog");
-  if (!appLog.length) { showToast("err","No applications to export."); return; }
-  const headers = ["Company","Title","Status","Applied Date","Location","URL"];
-  const rows = appLog.map(a => [
-    a.company, a.title, a.status,
-    new Date(a.appliedAt).toLocaleDateString(),
-    a.location || "", a.url || ""
-  ].map(v => `"${String(v).replace(/"/g,'""')}"`).join(","));
-  const csv = [headers.join(","), ...rows].join("\n");
-  try {
-    await bg({ action:"download", content:csv, filename:"JobHunt_Applications.csv", mime:"text/csv" });
-  } catch (e) { if (!isPortClosed(e)) showToast("err", e?.message); }
-}
-
-// ── PROFILE FORM ──────────────────────────────────────────────────────────────
-async function loadProfileUI() {
-  const d = await chrome.storage.local.get([
-    "firstName","lastName","email","phone","location","linkedin","github",
-    "visaStatus","ollamaUrl","ollamaModel","resumeData"
-  ]);
-  set("pFirst",   d.firstName || "");
-  set("pLast",    d.lastName  || "");
-  set("pEmail",   d.email     || "");
-  set("pPhone",   d.phone     || "");
-  set("pLinkedin",d.linkedin  || "");
-  set("pGithub",  d.github    || "");
-  set("ollamaUrl",d.ollamaUrl || "http://localhost:11434");
-  if (d.visaStatus) {
-    const sel = document.getElementById("pVisa");
-    const opt = [...sel.options].find(o => o.value === d.visaStatus);
-    if (opt) sel.value = d.visaStatus;
-  }
-  if (d.ollamaModel) {
-    const sel = document.getElementById("pModel");
-    const opt = [...sel.options].find(o => o.value === d.ollamaModel);
-    if (opt) sel.value = d.ollamaModel;
-    else { sel.appendChild(new Option(d.ollamaModel, d.ollamaModel, true, true)); sel.value = d.ollamaModel; }
-  }
-  // Skills pills
-  try {
-    const rd = JSON.parse(d.resumeData || "{}");
-    set("pSummary", rd.summary || "");
-    renderSkillPills(rd.skills || []);
-  } catch {}
-}
-
-function renderSkillPills(skills) {
-  const box = document.getElementById("skillsBox");
-  const input = document.getElementById("skillInput");
-  box.innerHTML = "";
-  skills.forEach(sk => {
-    const pill = document.createElement("div");
-    pill.className = "skill-pill";
-    pill.innerHTML = `${escHtml(sk)} <span class="sp-x" onclick="removeSkill('${escHtml(sk)}')">×</span>`;
-    box.appendChild(pill);
-  });
-  box.appendChild(input);
-}
-
-async function removeSkill(skill) {
-  const { resumeData } = await chrome.storage.local.get("resumeData");
-  const rd = JSON.parse(resumeData || "{}");
-  rd.skills = (rd.skills || []).filter(s => s !== skill);
-  await chrome.storage.local.set({ resumeData: JSON.stringify(rd) });
-  renderSkillPills(rd.skills);
-}
-
-function addSkillOnEnter(e) {
-  if (e.key !== "Enter" && e.key !== ",") return;
-  e.preventDefault();
-  const val = document.getElementById("skillInput").value.trim().replace(/,$/,"");
-  if (!val) return;
-  chrome.storage.local.get("resumeData").then(({ resumeData }) => {
-    const rd = JSON.parse(resumeData || "{}");
-    rd.skills = rd.skills || [];
-    if (!rd.skills.includes(val)) {
-      rd.skills.push(val);
-      chrome.storage.local.set({ resumeData: JSON.stringify(rd) });
-      renderSkillPills(rd.skills);
+    // Sync setup model selector
+    const setupSel = $('setup-model');
+    if (setupSel) {
+      for (const opt of setupSel.options) {
+        if (opt.value === selectedModel) { opt.selected = true; break; }
+      }
     }
-    document.getElementById("skillInput").value = "";
-  });
+  }
+
+  await incrementStat('saved');
+
+  btn.disabled = false;
+  btn.textContent = '✓ Saved';
+  setTimeout(() => (btn.textContent = 'Save Profile'), 2000);
+  showToast('✓ Profile saved');
+});
+
+// ─── Setup Tab ────────────────────────────────────────────────────────────────
+
+async function initSetupTab() {
+  updateSetupStatus('warn', 'Checking…', '');
+
+  const result = await testConnection();
+  if (result.ok) {
+    updateSetupStatus('ok', `Connected · ${result.models.length} model${result.models.length !== 1 ? 's' : ''}`, 'http://localhost:11434');
+    populateModelSelectors(result.models);
+  } else if (result.error === 'cors') {
+    updateSetupStatus('err', 'CORS Error', 'Ollama is running but blocked by browser');
+  } else {
+    updateSetupStatus('err', 'Offline', 'Ollama is not running');
+  }
+
+  // Sync model selector
+  const { settings } = await chrome.storage.local.get('settings').catch(() => ({ settings: null }));
+  if (settings?.model) {
+    const sel = $('setup-model');
+    if (sel) {
+      for (const opt of sel.options) {
+        if (opt.value === settings.model) { opt.selected = true; break; }
+      }
+    }
+  }
 }
 
-async function saveProfile() {
-  const { resumeData } = await chrome.storage.local.get("resumeData");
-  const rd = JSON.parse(resumeData || "{}");
-  const summary = document.getElementById("pSummary").value.trim();
-  if (summary) rd.summary = summary;
+function updateSetupStatus(state, text, sub) {
+  const dot = $('setup-dot');
+  const statusText = $('setup-status-text');
+  const statusSub = $('setup-status-sub');
 
-  await chrome.storage.local.set({
-    firstName:   document.getElementById("pFirst").value.trim(),
-    lastName:    document.getElementById("pLast").value.trim(),
-    email:       document.getElementById("pEmail").value.trim(),
-    phone:       document.getElementById("pPhone").value.trim(),
-    linkedin:    document.getElementById("pLinkedin").value.trim(),
-    github:      document.getElementById("pGithub").value.trim(),
-    website:     document.getElementById("pGithub").value.trim(),
-    visaStatus:  document.getElementById("pVisa").value,
-    ollamaUrl:   document.getElementById("ollamaUrl").value.trim() || "http://localhost:11434",
-    ollamaModel: document.getElementById("pModel").value,
-    resumeData:  JSON.stringify(rd)
-  });
-  showToast("ok", "Profile saved!");
+  dot.className = `status-dot ${state}`;
+  statusText.textContent = text;
+  if (sub !== undefined) statusSub.textContent = sub;
 }
 
-async function resetToDefaults() {
-  if (!confirm("Reset to Prasanna's default profile?")) return;
-  await chrome.storage.local.set({
-    firstName:   PRASANNA_PROFILE.firstName,
-    lastName:    PRASANNA_PROFILE.lastName,
-    email:       PRASANNA_PROFILE.email,
-    phone:       PRASANNA_PROFILE.phone,
-    location:    PRASANNA_PROFILE.location,
-    linkedin:    PRASANNA_PROFILE.linkedin,
-    github:      PRASANNA_PROFILE.github,
-    website:     PRASANNA_PROFILE.website,
-    portfolio:   PRASANNA_PROFILE.portfolio,
-    visaStatus:  PRASANNA_PROFILE.visaStatus,
-    resumeData:  PRASANNA_PROFILE.resumeData,
-    ollamaUrl:   PRASANNA_PROFILE.ollamaUrl,
-    ollamaModel: PRASANNA_PROFILE.ollamaModel,
-  });
-  await loadProfileUI();
-  showToast("ok", "Reset to default profile!");
-}
+$('btn-test-connection').addEventListener('click', async () => {
+  const btn = $('btn-test-connection');
+  btn.disabled = true;
+  btn.textContent = '…';
 
-async function seedIfEmpty() {
-  const { firstName } = await chrome.storage.local.get("firstName");
-  if (firstName) return;
-  await chrome.storage.local.set({
-    firstName:   PRASANNA_PROFILE.firstName,
-    lastName:    PRASANNA_PROFILE.lastName,
-    email:       PRASANNA_PROFILE.email,
-    phone:       PRASANNA_PROFILE.phone,
-    location:    PRASANNA_PROFILE.location,
-    linkedin:    PRASANNA_PROFILE.linkedin,
-    github:      PRASANNA_PROFILE.github,
-    website:     PRASANNA_PROFILE.website,
-    portfolio:   PRASANNA_PROFILE.portfolio,
-    visaStatus:  PRASANNA_PROFILE.visaStatus,
-    resumeData:  PRASANNA_PROFILE.resumeData,
-    ollamaUrl:   PRASANNA_PROFILE.ollamaUrl,
-    ollamaModel: PRASANNA_PROFILE.ollamaModel,
-  });
-}
+  const result = await testConnection();
+  if (result.ok) {
+    updateSetupStatus('ok', `Connected · ${result.models.length} model(s)`, 'http://localhost:11434');
+    setHeaderStatus('ok', 'Ollama ✓');
+    populateModelSelectors(result.models);
+  } else if (result.error === 'cors') {
+    updateSetupStatus('err', 'CORS Error', 'Restart Ollama with OLLAMA_ORIGINS=*');
+    setHeaderStatus('err', 'CORS Error');
+  } else {
+    updateSetupStatus('err', 'Offline', 'Run: ollama serve');
+    setHeaderStatus('err', 'Offline');
+  }
 
-async function saveOllamaUrl() {
-  const url = document.getElementById("ollamaUrl").value.trim() || "http://localhost:11434";
-  await chrome.storage.local.set({ ollamaUrl: url });
-  showToast("ok","URL saved. Testing…");
-  await checkOllamaStatus();
-}
+  btn.disabled = false;
+  btn.textContent = 'Test';
+});
 
-// ── SETUP TAB ─────────────────────────────────────────────────────────────────
-function refreshSetupUI() {
-  document.getElementById("setupOnlineNote").style.display = state.ollamaOnline ? "flex" : "none";
-  document.getElementById("setupOfflineNote").style.display = state.ollamaOnline ? "none" : "flex";
-}
+// Setup model selector sync
+$('setup-model').addEventListener('change', async () => {
+  const val = $('setup-model').value;
+  currentModel = val;
+  const { settings } = await chrome.storage.local.get('settings').catch(() => ({ settings: {} }));
+  await chrome.storage.local.set({ settings: { ...(settings || {}), model: val } });
 
-function selectModel(model, el) {
-  document.querySelectorAll(".model-opt").forEach(m => m.classList.remove("selected"));
-  el.classList.add("selected");
-  const sel = document.getElementById("pModel");
-  const opt = [...sel.options].find(o => o.value === model);
-  if (opt) sel.value = model;
-  chrome.storage.local.set({ ollamaModel: model });
-  showToast("ok", `Model set to ${model}`);
-}
+  // Sync me tab selector
+  const meSel = $('me-model');
+  if (meSel) {
+    for (const opt of meSel.options) {
+      if (opt.value === val) { opt.selected = true; break; }
+    }
+  }
 
-function copyCodeLine(el, text) {
-  navigator.clipboard.writeText(text || el.previousSibling?.textContent || "").then(() => {
-    el.classList.add("copied");
-    el.textContent = "✓ copied";
-    setTimeout(() => { el.classList.remove("copied"); el.textContent = "copy"; }, 2000);
-  });
-}
+  showToast(`Model set to ${val}`);
+});
 
-async function loadAvailableModels() {
-  try {
-    const r = await bg({ action: "checkOllama" });
-    if (r?.online && r.models?.length) populateModelSelect(r.models);
-    else showToast("err","Ollama offline or no models found.");
-  } catch (e) { if (!isPortClosed(e)) showToast("err", e?.message || "Failed"); }
-}
-
-function populateModelSelect(models) {
-  const sel = document.getElementById("pModel");
-  const cur = sel.value;
-  sel.innerHTML = "";
-  models.forEach(m => sel.appendChild(new Option(m, m)));
-  if (models.includes(cur)) sel.value = cur;
-  document.getElementById("modelHint").textContent = `${models.length} model(s) available locally`;
-}
-
-// ── COPY HELPERS ──────────────────────────────────────────────────────────────
-function copyOutput(elId) {
-  const el = document.getElementById(elId);
-  if (!el) return;
-  navigator.clipboard.writeText(el.textContent).then(() => {
-    showToast("ok","Copied to clipboard!");
-  });
-}
-function copyField(elId) {
-  const el = document.getElementById(elId);
-  if (!el) return;
-  navigator.clipboard.writeText(el.textContent).then(() => {
-    showToast("ok","Copied!");
-  });
-}
-
-// ── MARKDOWN RENDERER ─────────────────────────────────────────────────────────
-function mdToHtml(text) {
-  let t = (text || "").replace(/\r\n/g,"\n").trim();
-  // Tables
-  t = t.replace(/((?:\|[^\n]+\|\n)+)/g, match => {
-    const rows = match.trim().split("\n").filter(r => r.includes("|"));
-    if (rows.length < 2) return match;
-    let html = "<table>";
-    rows.forEach((row, i) => {
-      if (/^\|[-| :]+\|$/.test(row.trim())) return;
-      const cells = row.split("|").filter((_,j,a) => j > 0 && j < a.length - 1);
-      const tag = i === 0 ? "th" : "td";
-      html += `<tr>${cells.map(c => `<${tag}>${inlineFormat(c.trim())}</${tag}>`).join("")}</tr>`;
+// OS tab switching (setup tab)
+$$('#setup-os-tabs .os-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    $$('#setup-os-tabs .os-tab').forEach(t => t.classList.remove('on'));
+    tab.classList.add('on');
+    const os = tab.dataset.os;
+    [$('setup-cors-mac'), $('setup-cors-win'), $('setup-cors-linux')].forEach(p => {
+      if (p) p.classList.remove('on');
     });
-    return html + "</table>";
+    $(`setup-cors-${os}`)?.classList.add('on');
   });
-  // Headings
-  t = t.replace(/^#{1,2}\s+(.+)$/gm, (_,h) => `<h2>${inlineFormat(h)}</h2>`);
-  t = t.replace(/^#{3,4}\s+(.+)$/gm, (_,h) => `<h3>${inlineFormat(h)}</h3>`);
-  t = t.replace(/^(\d+)\.\s+([A-Z][^\n]{3,60})$/gm, (_,n,h) => `<h2>${n}. ${inlineFormat(h)}</h2>`);
-  // Lists
-  t = t.replace(/((?:^[•\-\*]\s+.+\n?)+)/gm, block => {
-    const items = block.trim().split("\n").filter(l => l.trim())
-      .map(l => `<li>${inlineFormat(l.replace(/^[•\-\*]\s+/,""))}</li>`).join("");
-    return `<ul>${items}</ul>`;
-  });
-  // Paragraphs
-  t = t.replace(/(?:^|\n\n)([^<\n][^\n]+(?:\n[^<\n][^\n]+)*)/g, (_, p) => {
-    if (p.startsWith("<")) return _;
-    return `\n<p>${inlineFormat(p.replace(/\n/g," "))}</p>`;
-  });
-  return t;
+});
+
+// ─── Code block copy buttons ──────────────────────────────────────────────────
+
+document.addEventListener('click', (e) => {
+  if (e.target.classList.contains('code-copy-btn')) {
+    const block = e.target.closest('.code-block');
+    if (!block) return;
+    const text = block.childNodes[0]?.textContent?.trim() || '';
+    copyToClipboard(text, e.target);
+  }
+});
+
+// ─── Listen for job data pushed from content script ───────────────────────────
+
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type === 'JOB_DATA' && msg.payload) {
+    currentJobData = msg.payload;
+    // If job tab is visible, re-render
+    const jobPanel = $('panel-job');
+    if (jobPanel && jobPanel.classList.contains('active')) {
+      renderJobData(currentJobData);
+    }
+  }
+});
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+
+async function init() {
+  // Load profile
+  currentProfile = await getProfile().catch(() => null);
+
+  // Load settings for model
+  const { settings } = await chrome.storage.local.get('settings').catch(() => ({ settings: null }));
+  if (settings?.model) currentModel = settings.model;
+
+  // Check Ollama in background
+  checkOllamaStatus();
+
+  // Initialize first tab
+  initJobTab();
 }
 
-function inlineFormat(t) {
-  t = t.replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>");
-  t = t.replace(/__([^_]+)__/g,"<strong>$1</strong>");
-  t = t.replace(/\*([^*]+)\*/g,"<em>$1</em>");
-  t = t.replace(/`([^`]+)`/g,`<code style="background:var(--off2);padding:1px 4px;border-radius:3px;font-family:'Geist Mono',monospace;font-size:10.5px">$1</code>`);
-  t = t.replace(/✓\s*([^,\n<]+)/g,'<span class="badge-g">✓ $1</span> ');
-  t = t.replace(/✗\s*([^,\n<]+)/g,'<span class="badge-r">✗ $1</span> ');
-  return t;
-}
-
-// ── TOAST ─────────────────────────────────────────────────────────────────────
-let toastTimer = null;
-function showToast(type, msg) {
-  const el = document.getElementById(type === "ok" ? "toastOk" : "toastErr");
-  const msgEl = document.getElementById(type === "ok" ? "toastOkMsg" : "toastErrMsg");
-  if (msg && msgEl) msgEl.textContent = msg;
-  el.classList.add("on");
-  if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove("on"), 3000);
-}
-
-// ── HELPERS ───────────────────────────────────────────────────────────────────
-function bg(msg) {
-  return new Promise((res, rej) => {
-    chrome.runtime.sendMessage(msg, r => {
-      const err = chrome.runtime.lastError;
-      if (err) { const e = new Error(err.message); if (err.message?.includes("message port")) e.code = "PORT_CLOSED"; rej(e); }
-      else res(r);
-    });
-  });
-}
-function isPortClosed(e) { return e?.code === "PORT_CLOSED" || e?.message?.includes("message port"); }
-function set(id, val) { const el = document.getElementById(id); if (el) el.value = val; }
-function escHtml(t) {
-  return String(t || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-}
-function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ""; }
-async function getModel() {
-  const { ollamaModel } = await chrome.storage.local.get("ollamaModel");
-  return ollamaModel || "llama3";
-}
+init();
