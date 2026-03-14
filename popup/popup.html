@@ -4,18 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>JobHunt AI Copilot</title>
-
-  <!-- Fonts: Fraunces (serif headings), Outfit (body/UI), Geist Mono (labels/data) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;0,9..144,700;1,9..144,300&family=Geist+Mono:wght@300;400;500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
-
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
 <div class="popup">
 
-  <!-- ─── Header ─────────────────────────────────────────────────── -->
+  <!-- ─── Header ─────────────────────────────────────────────── -->
   <header class="p-hdr">
     <div class="p-logo">
       <div class="p-logo-icon">
@@ -30,63 +27,81 @@
         <div class="p-logo-sub">Copilot · Free · Local</div>
       </div>
     </div>
-    <div class="p-status warn" id="hdr-status">
-      <div class="dot"></div>
-      <span id="hdr-status-text">Connecting…</span>
+    <div style="display:flex;align-items:center;gap:6px">
+      <button class="btn btn-xs btn-outline" id="btn-new-session" title="Start new session" style="font-size:10px;padding:3px 7px">New Session</button>
+      <div class="p-status warn" id="hdr-status">
+        <div class="dot"></div>
+        <span id="hdr-status-text">Connecting…</span>
+      </div>
     </div>
   </header>
 
-  <!-- ─── Tabs ───────────────────────────────────────────────────── -->
+  <!-- ─── Tabs ───────────────────────────────────────────────── -->
   <nav class="p-tabs">
     <button class="p-tab on" data-tab="job">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/>
-      </svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
       Job
     </button>
     <button class="p-tab" data-tab="generate">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M5 12h14M12 5l7 7-7 7"/>
-      </svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
       Generate
     </button>
     <button class="p-tab" data-tab="fill">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>
-      </svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
       Fill
     </button>
     <button class="p-tab" data-tab="log">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/>
-      </svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>
       Log
     </button>
     <button class="p-tab" data-tab="me">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="8" r="4"/><path d="M6 20v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/>
-      </svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M6 20v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg>
       Me
     </button>
     <button class="p-tab" data-tab="setup">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
-      </svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
       Setup
     </button>
   </nav>
 
-  <!-- ─── Body ───────────────────────────────────────────────────── -->
+  <!-- ─── Body ───────────────────────────────────────────────── -->
   <main class="p-body">
 
     <!-- ══════ JOB TAB ══════ -->
     <div class="tab-panel active" id="panel-job">
 
-      <!-- Empty state (shown when no job detected) -->
+      <!-- LOADING STATE (new) -->
+      <div id="job-loading" class="hidden">
+        <div style="padding:20px 16px 0">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <span class="lbl" style="margin:0" id="job-loading-msg">Scanning page…</span>
+            <span style="font-family:'Geist Mono',monospace;font-size:10px;color:var(--teal)" id="job-loading-pct">0%</span>
+          </div>
+          <div class="job-loading-bar-wrap">
+            <div class="job-loading-bar-fill" id="job-loading-bar" style="width:0%"></div>
+          </div>
+        </div>
+        <div class="loading-overlay" style="padding:16px">
+          <div class="spinner dark"></div>
+          <span style="font-size:12px;color:var(--muted)">Detecting job posting…</span>
+        </div>
+        <div style="padding:0 16px 14px;text-align:center">
+          <span style="font-size:11px;color:var(--muted)">Takes longer on LinkedIn — it loads content dynamically</span>
+        </div>
+      </div>
+
+      <!-- EMPTY STATE -->
       <div id="job-empty" class="empty">
         <div class="empty-icon">🔍</div>
         <div class="empty-title">No job detected</div>
-        <div class="empty-desc">Navigate to a job posting on a supported site and the AI will auto-extract the details.</div>
+        <div class="empty-desc">Navigate to a job posting on a supported site, or paste the JD manually below.</div>
+        <div style="display:flex;gap:8px;margin-bottom:14px">
+          <button class="btn btn-ghost-teal btn-sm" id="btn-rescan">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+            Re-scan Page
+          </button>
+          <button class="btn btn-outline btn-sm" id="btn-enter-manually">✏ Enter Manually</button>
+        </div>
         <div class="site-grid" style="width:100%">
           <div class="site-cell"><div class="site-cell-icon">💼</div>LinkedIn</div>
           <div class="site-cell"><div class="site-cell-icon">🎯</div>Jobright</div>
@@ -97,43 +112,82 @@
         </div>
       </div>
 
-      <!-- CORS error state (shown when Ollama returns 403) -->
+      <!-- MANUAL ENTRY (new) -->
+      <div id="job-manual" class="hidden">
+        <div class="p-section">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <span style="font-weight:600;font-size:13px;color:var(--head)">✏ Manual Job Entry</span>
+            <button class="btn btn-xs btn-outline" id="btn-cancel-manual">Cancel</button>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="manual-title">Job Title</label>
+            <input class="form-input" id="manual-title" type="text" placeholder="e.g. Senior Backend Engineer">
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div class="form-group">
+              <label class="form-label" for="manual-company">Company</label>
+              <input class="form-input" id="manual-company" type="text" placeholder="e.g. Stripe">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="manual-location">Location</label>
+              <input class="form-input" id="manual-location" type="text" placeholder="e.g. Remote, TX">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="manual-jd">
+              Full Job Description
+              <span style="float:right;color:var(--muted);font-family:'Outfit',sans-serif;text-transform:none;letter-spacing:0;font-size:10px">Paste the entire JD here</span>
+            </label>
+            <textarea class="textarea" id="manual-jd" rows="8" placeholder="Paste the full job description here. The AI uses this to generate tailored resumes, cover letters, and compute your ATS score…"></textarea>
+          </div>
+          <button class="btn btn-teal btn-full" id="btn-submit-manual">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            Load Job
+          </button>
+        </div>
+      </div>
+
+      <!-- CORS ERROR STATE -->
       <div id="job-cors" class="p-section hidden">
         <div class="cors-box">
           <div class="cors-box-title">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
             CORS Error — Ollama blocked
           </div>
-          <div class="cors-box-desc">Your browser blocked the request to Ollama. Fix it by restarting Ollama with CORS origins allowed.</div>
+          <div class="cors-box-desc">Restart Ollama with CORS origins allowed:</div>
           <div class="os-tabs" id="job-cors-os-tabs">
             <button class="os-tab on" data-os="mac">macOS</button>
             <button class="os-tab" data-os="win">Windows</button>
             <button class="os-tab" data-os="linux">Linux</button>
           </div>
-          <div class="os-panel on" id="job-cors-mac">
-            <div class="code-block">OLLAMA_ORIGINS=* ollama serve<button class="code-copy-btn">Copy</button></div>
-          </div>
-          <div class="os-panel" id="job-cors-win">
-            <div class="code-block">$env:OLLAMA_ORIGINS="*"; ollama serve<button class="code-copy-btn">Copy</button></div>
-          </div>
-          <div class="os-panel" id="job-cors-linux">
-            <div class="code-block">OLLAMA_ORIGINS=* ollama serve<button class="code-copy-btn">Copy</button></div>
-          </div>
+          <div class="os-panel on" id="job-cors-mac"><div class="code-block">OLLAMA_ORIGINS=* ollama serve<button class="code-copy-btn">Copy</button></div></div>
+          <div class="os-panel" id="job-cors-win"><div class="code-block">$env:OLLAMA_ORIGINS="*"; ollama serve<button class="code-copy-btn">Copy</button></div></div>
+          <div class="os-panel" id="job-cors-linux"><div class="code-block">OLLAMA_ORIGINS=* ollama serve<button class="code-copy-btn">Copy</button></div></div>
           <button class="btn btn-outline btn-sm mt-8" id="job-cors-test-btn">Test Connection</button>
         </div>
       </div>
 
-      <!-- Job data (shown when job is detected) -->
+      <!-- JOB DATA STATE -->
       <div id="job-data" class="hidden">
-        <!-- Job card -->
         <div class="job-card">
           <div class="job-title" id="job-title">—</div>
           <div class="job-company" id="job-company">—</div>
-          <div class="job-chips" id="job-chips"><!-- Chips rendered by JS --></div>
+          <div class="job-chips" id="job-chips"></div>
+        </div>
+
+        <!-- Analysis progress (shown during analyze) -->
+        <div id="analysis-progress" class="hidden" style="padding:10px 16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+            <span class="lbl" style="margin:0" id="analysis-label">Analyzing…</span>
+            <span style="font-family:'Geist Mono',monospace;font-size:10px;color:var(--teal)" id="analysis-pct">0%</span>
+          </div>
+          <div class="job-loading-bar-wrap">
+            <div class="job-loading-bar-fill" id="analysis-bar" style="width:0%"></div>
+          </div>
         </div>
 
         <!-- ATS Score Ring -->
-        <div class="ats-ring-wrap" id="ats-ring-wrap">
+        <div class="ats-ring-wrap">
           <div class="ats-ring">
             <svg viewBox="0 0 72 72" width="72" height="72">
               <circle class="ats-ring-bg" cx="36" cy="36" r="30"/>
@@ -146,7 +200,7 @@
           </div>
           <div class="ats-ring-info">
             <div class="ats-ring-title" id="ats-ring-title">Run Analysis</div>
-            <div class="ats-ring-desc" id="ats-ring-desc">Click Analyze to compute your ATS match score against this job description.</div>
+            <div class="ats-ring-desc" id="ats-ring-desc">Click Analyze to compute your ATS match score against this job.</div>
           </div>
         </div>
 
@@ -173,7 +227,7 @@
         <!-- Skill Chips -->
         <div class="skills-section" id="skills-section" style="display:none">
           <span class="lbl">Keywords</span>
-          <div class="sk-chips" id="sk-chips"><!-- Rendered by JS --></div>
+          <div class="sk-chips" id="sk-chips"></div>
           <div class="mt-8" style="display:flex;gap:8px;font-size:11px;color:var(--muted)">
             <span style="display:flex;align-items:center;gap:3px"><span class="sk sk-y" style="padding:1px 6px">●</span> Matched</span>
             <span style="display:flex;align-items:center;gap:3px"><span class="sk sk-m" style="padding:1px 6px">●</span> Partial</span>
@@ -200,7 +254,6 @@
 
     <!-- ══════ GENERATE TAB ══════ -->
     <div class="tab-panel" id="panel-generate">
-      <!-- Mode selector -->
       <div class="modes">
         <button class="mode-btn on" data-mode="resume">Resume</button>
         <button class="mode-btn" data-mode="cover">Cover Letter</button>
@@ -208,38 +261,45 @@
         <button class="mode-btn" data-mode="dm">LinkedIn DM</button>
       </div>
 
-      <!-- No job warning -->
       <div id="gen-no-job" class="p-section hidden">
         <div class="notice notice-amber">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-          No job detected. Output will use your profile only. Navigate to a job listing for a tailored result.
+          No job detected. Output will use your profile only.
         </div>
       </div>
 
-      <!-- Output area -->
+      <!-- Generation progress bar (new) -->
+      <div id="gen-progress" class="hidden" style="padding:8px 16px 0">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+          <span style="font-family:'Geist Mono',monospace;font-size:10px;color:var(--teal)" id="gen-progress-label">Generating…</span>
+          <span style="font-family:'Geist Mono',monospace;font-size:10px;color:var(--muted)" id="gen-progress-pct">0%</span>
+        </div>
+        <div class="job-loading-bar-wrap">
+          <div class="job-loading-bar-fill" id="gen-progress-bar" style="width:0%"></div>
+        </div>
+      </div>
+
       <div class="output-wrap">
         <div class="output-box" id="output-box">
-          <span class="output-box-placeholder" id="output-placeholder">Select a mode above and click Generate →</span>
+          <span class="output-box-placeholder">Select a mode above and click Generate →</span>
         </div>
         <div class="copy-btn-overlay">
           <button class="btn btn-xs btn-outline" id="btn-copy-output">Copy</button>
         </div>
       </div>
 
-      <!-- Generate button -->
-      <div style="padding: 0 16px 12px">
+      <div style="padding:0 16px 12px">
         <button class="btn btn-teal btn-full" id="btn-generate">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
           Generate with <span id="gen-model-label">llama3</span>
         </button>
       </div>
 
-      <!-- Custom instruction -->
       <div class="custom-prompt-wrap">
         <div style="border-top:1px solid var(--rule)">
           <span class="custom-prompt-label">Custom instruction (optional)</span>
           <div class="custom-prompt-row">
-            <textarea class="textarea" id="custom-prompt" placeholder="e.g. Make it more concise, focus on leadership experience…" rows="2"></textarea>
+            <textarea class="textarea" id="custom-prompt" placeholder="e.g. Make it more concise, emphasize leadership experience…" rows="2"></textarea>
             <button class="btn btn-ghost-teal btn-sm" id="btn-send-custom">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M22 2 11 13M22 2 15 22 11 13 2 9l20-7z"/></svg>
             </button>
@@ -250,50 +310,21 @@
 
     <!-- ══════ FILL TAB ══════ -->
     <div class="tab-panel" id="panel-fill">
-      <!-- Autofill Kit card -->
       <div class="af-kit">
         <span class="lbl">Autofill Kit</span>
-        <div class="af-row">
-          <span class="af-label">Name</span>
-          <span class="af-value" id="af-name">—</span>
-          <button class="btn btn-xs btn-outline af-copy" data-field="af-name">Copy</button>
-        </div>
-        <div class="af-row">
-          <span class="af-label">Email</span>
-          <span class="af-value" id="af-email">—</span>
-          <button class="btn btn-xs btn-outline af-copy" data-field="af-email">Copy</button>
-        </div>
-        <div class="af-row">
-          <span class="af-label">Phone</span>
-          <span class="af-value" id="af-phone">—</span>
-          <button class="btn btn-xs btn-outline af-copy" data-field="af-phone">Copy</button>
-        </div>
-        <div class="af-row">
-          <span class="af-label">LinkedIn</span>
-          <span class="af-value" id="af-linkedin">—</span>
-          <button class="btn btn-xs btn-outline af-copy" data-field="af-linkedin">Copy</button>
-        </div>
-        <div class="af-row">
-          <span class="af-label">GitHub</span>
-          <span class="af-value" id="af-github">—</span>
-          <button class="btn btn-xs btn-outline af-copy" data-field="af-github">Copy</button>
-        </div>
-        <div class="af-row" style="align-items:flex-start">
-          <span class="af-label" style="margin-top:2px">Summary</span>
-          <span class="af-value" id="af-summary" style="white-space:normal;font-size:11px;max-height:48px;overflow:hidden">—</span>
-          <button class="btn btn-xs btn-outline af-copy" data-field="af-summary">Copy</button>
-        </div>
+        <div class="af-row"><span class="af-label">Name</span><span class="af-value" id="af-name">—</span><button class="btn btn-xs btn-outline af-copy" data-field="af-name">Copy</button></div>
+        <div class="af-row"><span class="af-label">Email</span><span class="af-value" id="af-email">—</span><button class="btn btn-xs btn-outline af-copy" data-field="af-email">Copy</button></div>
+        <div class="af-row"><span class="af-label">Phone</span><span class="af-value" id="af-phone">—</span><button class="btn btn-xs btn-outline af-copy" data-field="af-phone">Copy</button></div>
+        <div class="af-row"><span class="af-label">LinkedIn</span><span class="af-value" id="af-linkedin">—</span><button class="btn btn-xs btn-outline af-copy" data-field="af-linkedin">Copy</button></div>
+        <div class="af-row"><span class="af-label">GitHub</span><span class="af-value" id="af-github">—</span><button class="btn btn-xs btn-outline af-copy" data-field="af-github">Copy</button></div>
+        <div class="af-row" style="align-items:flex-start"><span class="af-label" style="margin-top:2px">Summary</span><span class="af-value" id="af-summary" style="white-space:normal;font-size:11px;max-height:48px;overflow:hidden">—</span><button class="btn btn-xs btn-outline af-copy" data-field="af-summary">Copy</button></div>
       </div>
-
-      <!-- Notice -->
       <div class="p-section">
         <div class="notice notice-teal">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          Auto-fill works on LinkedIn Easy Apply, Greenhouse, Lever, and Workday forms. Fields flash teal when filled.
+          Works on LinkedIn Easy Apply, Greenhouse, Lever, and Workday. Fields flash teal when filled.
         </div>
       </div>
-
-      <!-- Action buttons -->
       <div class="btn-row">
         <button class="btn btn-teal flex-1" id="btn-autofill">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M12 5v14M5 12h14"/></svg>
@@ -305,140 +336,69 @@
 
     <!-- ══════ LOG TAB ══════ -->
     <div class="tab-panel" id="panel-log">
-      <!-- Stats grid -->
       <div class="stats-grid">
-        <div class="stat-box">
-          <div class="stat-num" id="stat-applied">0</div>
-          <div class="stat-label">Applied</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-num" id="stat-generated">0</div>
-          <div class="stat-label">Generated</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-num" id="stat-filled">0</div>
-          <div class="stat-label">Filled</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-num" id="stat-saved">0</div>
-          <div class="stat-label">Saved</div>
-        </div>
+        <div class="stat-box"><div class="stat-num" id="stat-applied">0</div><div class="stat-label">Applied</div></div>
+        <div class="stat-box"><div class="stat-num" id="stat-generated">0</div><div class="stat-label">Generated</div></div>
+        <div class="stat-box"><div class="stat-num" id="stat-filled">0</div><div class="stat-label">Filled</div></div>
+        <div class="stat-box"><div class="stat-num" id="stat-saved">0</div><div class="stat-label">Saved</div></div>
       </div>
-
-      <!-- Log list -->
-      <div class="log-list" id="log-list">
-        <!-- Rendered by JS -->
-      </div>
-
-      <!-- Empty log state -->
+      <div class="log-list" id="log-list"></div>
       <div id="log-empty" class="empty" style="padding:24px">
         <div class="empty-icon">📋</div>
         <div class="empty-title">No applications logged</div>
-        <div class="empty-desc">When you apply to a job, click the + button on the Job tab to log it here.</div>
+        <div class="empty-desc">Click + on the Job tab to log an application.</div>
       </div>
     </div>
 
-    <!-- ══════ ME TAB (Profile) ══════ -->
+    <!-- ══════ ME TAB ══════ -->
     <div class="tab-panel" id="panel-me">
       <div class="p-section">
-        <div class="form-group">
-          <label class="form-label" for="me-name">Full Name</label>
-          <input class="form-input" id="me-name" type="text" placeholder="Your full name">
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="me-email">Email</label>
-          <input class="form-input" id="me-email" type="email" placeholder="you@email.com">
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="me-phone">Phone</label>
-          <input class="form-input" id="me-phone" type="tel" placeholder="+1 555 000 0000">
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="me-linkedin">LinkedIn URL</label>
-          <input class="form-input" id="me-linkedin" type="url" placeholder="linkedin.com/in/yourprofile">
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="me-github">GitHub URL</label>
-          <input class="form-input" id="me-github" type="url" placeholder="github.com/yourusername">
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="me-summary">Resume Summary / Elevator Pitch Base</label>
-          <textarea class="textarea" id="me-summary" rows="5" placeholder="Summarize your background, key impact metrics, and what you're looking for. This feeds directly into AI generation."></textarea>
-        </div>
+        <div class="form-group"><label class="form-label" for="me-name">Full Name</label><input class="form-input" id="me-name" type="text" placeholder="Your full name"></div>
+        <div class="form-group"><label class="form-label" for="me-email">Email</label><input class="form-input" id="me-email" type="email" placeholder="you@email.com"></div>
+        <div class="form-group"><label class="form-label" for="me-phone">Phone</label><input class="form-input" id="me-phone" type="tel" placeholder="+1 555 000 0000"></div>
+        <div class="form-group"><label class="form-label" for="me-linkedin">LinkedIn URL</label><input class="form-input" id="me-linkedin" type="url" placeholder="linkedin.com/in/yourprofile"></div>
+        <div class="form-group"><label class="form-label" for="me-github">GitHub URL</label><input class="form-input" id="me-github" type="url" placeholder="github.com/yourusername"></div>
+        <div class="form-group"><label class="form-label" for="me-summary">Resume Summary / Elevator Pitch</label><textarea class="textarea" id="me-summary" rows="5" placeholder="Your background, stack, impact metrics, and what you're looking for. This feeds all AI generation."></textarea></div>
         <div class="form-group">
           <label class="form-label">Skills</label>
-          <div class="skills-input-row">
-            <input class="form-input flex-1" id="me-skills-input" type="text" placeholder="Add skill, press Enter">
-            <button class="btn btn-ghost-teal btn-sm" id="btn-add-skill">Add</button>
-          </div>
-          <div class="skill-tags" id="skill-tags"><!-- Rendered by JS --></div>
+          <div class="skills-input-row"><input class="form-input flex-1" id="me-skills-input" type="text" placeholder="Add skill, press Enter or use commas"><button class="btn btn-ghost-teal btn-sm" id="btn-add-skill">Add</button></div>
+          <div class="skill-tags" id="skill-tags"></div>
         </div>
-        <div class="form-group">
-          <label class="form-label" for="me-model">Preferred Model</label>
-          <select class="form-select" id="me-model">
-            <option value="llama3">llama3</option>
-          </select>
-        </div>
+        <div class="form-group"><label class="form-label" for="me-model">Preferred Model</label><select class="form-select" id="me-model"><option value="llama3">llama3</option></select></div>
       </div>
-      <div class="btn-row">
-        <button class="btn btn-teal btn-full" id="btn-save-profile">Save Profile</button>
-      </div>
+      <div class="btn-row"><button class="btn btn-teal btn-full" id="btn-save-profile">Save Profile</button></div>
     </div>
 
     <!-- ══════ SETUP TAB ══════ -->
     <div class="tab-panel" id="panel-setup">
-      <!-- Connection status -->
       <div class="p-section">
         <span class="lbl">Ollama Connection</span>
         <div class="status-card">
           <div class="status-left">
             <div class="status-dot warn" id="setup-dot"></div>
-            <div>
-              <div class="status-text" id="setup-status-text">Checking…</div>
-              <div class="status-sub" id="setup-status-sub">http://localhost:11434</div>
-            </div>
+            <div><div class="status-text" id="setup-status-text">Checking…</div><div class="status-sub" id="setup-status-sub">http://localhost:11434</div></div>
           </div>
           <button class="btn btn-outline btn-sm" id="btn-test-connection">Test</button>
         </div>
       </div>
-
-      <!-- Model selector -->
       <div class="p-section">
-        <div class="form-group">
-          <label class="form-label" for="setup-model">Active Model</label>
-          <select class="form-select" id="setup-model">
-            <option value="llama3">llama3</option>
-          </select>
-        </div>
+        <div class="form-group"><label class="form-label" for="setup-model">Active Model</label><select class="form-select" id="setup-model"><option value="llama3">llama3</option></select></div>
       </div>
-
-      <!-- CORS Fix Wizard -->
-      <div class="p-section" id="cors-wizard">
+      <div class="p-section">
         <span class="lbl" style="margin-bottom:8px">CORS Fix Wizard</span>
         <div class="cors-box">
-          <div class="cors-box-title">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            Restart Ollama with CORS enabled
-          </div>
-          <div class="cors-box-desc">If you see CORS or connection errors, restart Ollama using the command for your OS:</div>
+          <div class="cors-box-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> Restart Ollama with CORS enabled</div>
+          <div class="cors-box-desc">If you see errors, restart Ollama using the command for your OS:</div>
           <div class="os-tabs" id="setup-os-tabs">
             <button class="os-tab on" data-os="mac">macOS</button>
             <button class="os-tab" data-os="win">Windows</button>
             <button class="os-tab" data-os="linux">Linux</button>
           </div>
-          <div class="os-panel on" id="setup-cors-mac">
-            <div class="code-block">OLLAMA_ORIGINS=* ollama serve<button class="code-copy-btn">Copy</button></div>
-          </div>
-          <div class="os-panel" id="setup-cors-win">
-            <div class="code-block">$env:OLLAMA_ORIGINS="*"; ollama serve<button class="code-copy-btn">Copy</button></div>
-          </div>
-          <div class="os-panel" id="setup-cors-linux">
-            <div class="code-block">OLLAMA_ORIGINS=* ollama serve<button class="code-copy-btn">Copy</button></div>
-          </div>
+          <div class="os-panel on" id="setup-cors-mac"><div class="code-block">OLLAMA_ORIGINS=* ollama serve<button class="code-copy-btn">Copy</button></div></div>
+          <div class="os-panel" id="setup-cors-win"><div class="code-block">$env:OLLAMA_ORIGINS="*"; ollama serve<button class="code-copy-btn">Copy</button></div></div>
+          <div class="os-panel" id="setup-cors-linux"><div class="code-block">OLLAMA_ORIGINS=* ollama serve<button class="code-copy-btn">Copy</button></div></div>
         </div>
       </div>
-
-      <!-- Supported sites checklist -->
       <div class="p-section">
         <span class="lbl">Supported Sites</span>
         <div class="site-grid">
@@ -450,19 +410,13 @@
           <div class="site-cell"><div class="site-cell-icon">☁️</div>Workday</div>
         </div>
       </div>
-
-      <!-- Version footer -->
-      <div class="version-footer">
-        JobHunt AI Copilot v4 · Free · Local · Open Source
-      </div>
+      <div class="version-footer">JobHunt AI Copilot v4 · Free · Local · Open Source</div>
     </div>
 
-  </main><!-- /.p-body -->
-</div><!-- /.popup -->
+  </main>
+</div>
 
-<!-- Toast -->
 <div class="toast" id="toast"></div>
-
 <script src="popup.js" type="module"></script>
 </body>
 </html>

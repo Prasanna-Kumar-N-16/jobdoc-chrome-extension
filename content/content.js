@@ -1,14 +1,17 @@
-// content/content.js — Job data scraper for JobHunt AI Copilot v4
-// Runs on all supported job sites
+// content/content.js — Robust Job Scraper for JobHunt AI Copilot v4
+// Handles SPA navigation, lazy-loaded content, JSON-LD structured data, multiple selector fallbacks
 
 (function () {
   'use strict';
 
+  if (window.__jobhuntInjected) return; // Prevent double-injection
+  window.__jobhuntInjected = true;
+
   let lastUrl = location.href;
   let lastJobData = null;
   let scrapeTimeout = null;
-
-  // ─── Site Detection ─────────────────────────────────────────────────────────
+  let retryCount = 0;
+  const MAX_RETRIES = 6;
 
   function detectSite() {
     const host = location.hostname;
@@ -21,198 +24,247 @@
     return null;
   }
 
-  // ─── Text helpers ────────────────────────────────────────────────────────────
-
-  function getText(selector, root = document) {
-    const el = root.querySelector(selector);
-    return el ? el.innerText.trim() : null;
+  // Try multiple selectors, return first non-empty text
+  function tryText(...selectors) {
+    for (const sel of selectors) {
+      try {
+        const els = document.querySelectorAll(sel);
+        for (const el of els) {
+          const t = (el.innerText || el.textContent || '').trim();
+          if (t && t.length > 1) return t;
+        }
+      } catch { }
+    }
+    return null;
   }
 
-  function getAttr(selector, attr, root = document) {
-    const el = root.querySelector(selector);
-    return el ? el.getAttribute(attr) : null;
+  // Try multiple attribute reads
+  function tryAttr(attr, ...selectors) {
+    for (const sel of selectors) {
+      try {
+        const el = document.querySelector(sel);
+        const v = el && el.getAttribute(attr) && el.getAttribute(attr).trim();
+        if (v && v.length > 1) return v;
+      } catch { }
+    }
+    return null;
   }
 
-  function containsText(text, patterns) {
-    if (!text) return false;
-    return patterns.some(p => new RegExp(p, 'i').test(text));
+  // Get text from largest matching element (best for descriptions)
+  function tryLargestText(...selectors) {
+    let best = '';
+    for (const sel of selectors) {
+      try {
+        const els = document.querySelectorAll(sel);
+        for (const el of els) {
+          const t = (el.innerText || '').trim();
+          if (t.length > best.length) best = t;
+        }
+      } catch { }
+    }
+    return best || null;
   }
 
   function parseSalary(text) {
     if (!text) return null;
-    const m = text.match(/\$[\d,]+(?:k)?(?:\s*[-–]\s*\$[\d,]+(?:k)?)?(?:\s*\/\s*(?:yr|year|hr|hour))?/i);
+    const m = text.match(/\$[\d,]+(?:\.\d+)?[kK]?(?:\s*[-\u2013\u2014]\s*\$[\d,]+(?:\.\d+)?[kK]?)?(?:\s*(?:\/\s*(?:yr|year|hr|hour|mo|month)|per\s+(?:year|hour|month)))?/i);
     return m ? m[0] : null;
   }
 
   function detectRemote(text) {
     if (!text) return null;
-    if (/\bfully\s+remote\b|\b100%\s+remote\b/i.test(text)) return 'remote';
-    if (/\bremote\b/i.test(text)) return 'remote';
-    if (/\bhybrid\b/i.test(text)) return 'hybrid';
-    if (/\bon.?site\b|\bin.?office\b/i.test(text)) return 'onsite';
+    const t = text.toLowerCase();
+    if (/fully\s+remote|100%\s+remote|remote\s+only|work\s+from\s+home|\bwfh\b/.test(t)) return 'remote';
+    if (/\bhybrid\b/.test(t)) return 'hybrid';
+    if (/\bonsite\b|on-site|in.office|in.person/.test(t)) return 'onsite';
+    if (/\bremote\b/.test(t)) return 'remote';
     return null;
   }
 
-  // ─── LinkedIn Scraper ────────────────────────────────────────────────────────
+  function detectSponsorship(text) {
+    if (!text) return false;
+    return /visa\s*sponsor|h[1-9][ab][-\s]?(?:visa|transfer|sponsor)|work\s*authorization\s*sponsor|will\s*sponsor|sponsor.*work\s*permit/i.test(text);
+  }
+
+  // Parse JSON-LD structured data — most reliable when available
+  function parseJsonLD() {
+    const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+    for (const script of scripts) {
+      try {
+        const raw = JSON.parse(script.textContent);
+        const items = Array.isArray(raw) ? raw : [raw];
+        for (const item of items) {
+          if (item['@type'] === 'JobPosting' || item['@type'] === 'Job') {
+            const desc = item.description
+              ? item.description.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+              : null;
+            const loc = item.jobLocation;
+            const locStr = typeof loc === 'string' ? loc :
+              loc && loc.address ? (
+                [loc.address.streetAddress, loc.address.addressLocality,
+                 loc.address.addressRegion, loc.address.addressCountry]
+                .filter(Boolean).join(', ')
+              ) : null;
+            const salary = item.baseSalary && item.baseSalary.value
+              ? (item.baseSalary.value.minValue && item.baseSalary.value.maxValue
+                  ? '$' + item.baseSalary.value.minValue + '\u2013$' + item.baseSalary.value.maxValue
+                  : String(item.baseSalary.value.value || ''))
+              : null;
+            return {
+              title: item.title || item.name || null,
+              company: (item.hiringOrganization && item.hiringOrganization.name) || (item.employer && item.employer.name) || null,
+              location: locStr,
+              description: desc,
+              salary: salary,
+              remote: item.jobLocationType === 'TELECOMMUTE' ? 'remote' : null,
+              fromLD: true
+            };
+          }
+        }
+      } catch { }
+    }
+    return null;
+  }
+
+  // ─── LinkedIn ────────────────────────────────────────────────────────────────
 
   function scrapeLinkedIn() {
-    // Job detail panel (job search results view)
-    const title =
-      getText('.job-details-jobs-unified-top-card__job-title') ||
-      getText('.jobs-unified-top-card__job-title') ||
-      getText('h1.t-24') ||
-      getText('h1');
+    const ld = parseJsonLD();
 
-    const company =
-      getText('.job-details-jobs-unified-top-card__company-name') ||
-      getText('.jobs-unified-top-card__company-name') ||
-      getText('.jobs-unified-top-card__subtitle-primary-grouping a');
+    const title = (ld && ld.title) || tryText(
+      '.job-details-jobs-unified-top-card__job-title h1',
+      '.job-details-jobs-unified-top-card__job-title',
+      '.jobs-unified-top-card__job-title h1',
+      '.jobs-unified-top-card__job-title',
+      '.job-view-layout h1',
+      'h1.t-24',
+      '[class*="job-title"] h1',
+      '[class*="topCard"] h1',
+      '.top-card-layout__title',
+      'h1'
+    );
 
-    const location =
-      getText('.job-details-jobs-unified-top-card__bullet') ||
-      getText('.jobs-unified-top-card__bullet');
+    const company = (ld && ld.company) || tryText(
+      '.job-details-jobs-unified-top-card__company-name a',
+      '.job-details-jobs-unified-top-card__company-name',
+      '.jobs-unified-top-card__company-name a',
+      '.jobs-unified-top-card__company-name',
+      '.jobs-unified-top-card__subtitle-primary-grouping a',
+      'a[href*="/company/"][aria-label]',
+      '.top-card-layout__card a[href*="company"]',
+      '.artdeco-entity-lockup__subtitle a'
+    );
 
-    const descEl =
-      document.querySelector('.jobs-description__content') ||
-      document.querySelector('.job-details-jobs-unified-top-card__job-description') ||
-      document.querySelector('[class*="description"]');
+    const location = (ld && ld.location) || tryText(
+      '.job-details-jobs-unified-top-card__bullet',
+      '.jobs-unified-top-card__bullet',
+      '.jobs-unified-top-card__workplace-type',
+      '.job-details-jobs-unified-top-card__primary-description span:nth-child(3)',
+      '.topcard__flavor--bullet',
+      '[class*="workplace-type"]'
+    );
 
-    const description = descEl ? descEl.innerText.trim() : '';
+    const description = (ld && ld.description) || tryLargestText(
+      '.jobs-description__content .jobs-box__html-content',
+      '.jobs-description__content',
+      '.jobs-description-content__text',
+      '.job-details-jobs-unified-top-card__job-description',
+      '#job-details',
+      '.description__text--rich',
+      '[class*="jobs-description"]',
+      '[class*="job-description"]'
+    ) || '';
 
-    const easyApply = !!document.querySelector('.jobs-apply-button--top-card, [data-control-name="jobdetails_topcard_inapply"]');
+    const easyApply = !!(
+      document.querySelector('button[aria-label*="Easy Apply"]') ||
+      document.querySelector('.jobs-apply-button--top-card') ||
+      document.querySelector('[class*="easy-apply"]') ||
+      document.querySelector('button[class*="jobs-apply"]')
+    );
 
-    const salary = parseSalary(description) || parseSalary(getText('.jobs-unified-top-card__job-insight'));
+    const insightText = tryText(
+      '.jobs-unified-top-card__job-insight',
+      '.job-details-jobs-unified-top-card__job-insight',
+      '.jobs-unified-top-card__salary-info',
+      '[class*="salary"]'
+    ) || '';
 
-    const fullText = `${title} ${company} ${location} ${description}`;
-    const remote = detectRemote(fullText);
-    const sponsorship = containsText(description, ['visa sponsor', 'h1b', 'work authorization sponsor']);
+    const fullText = [title, company, location, insightText, description].join(' ');
+    const salary = (ld && ld.salary) || parseSalary(insightText) || parseSalary(fullText);
+    const remote = (ld && ld.remote) || detectRemote([location, insightText, description].join(' '));
+    const sponsorship = detectSponsorship(description);
 
     if (!title && !company) return null;
-
-    return { title, company, location, description, salary, remote, sponsorship, easyApply, site: 'linkedin' };
+    return { title, company, location, description, salary, remote, sponsorship, easyApply, site: 'linkedin', url: location.href };
   }
 
-  // ─── Jobright Scraper ────────────────────────────────────────────────────────
+  // ─── Jobright ────────────────────────────────────────────────────────────────
 
   function scrapeJobright() {
-    const title = getText('h1') || getText('[class*="job-title"]');
-    const company = getText('[class*="company-name"]') || getText('[class*="company"]');
-    const location = getText('[class*="location"]');
-    const descEl = document.querySelector('[class*="job-description"], [class*="description"]');
-    const description = descEl ? descEl.innerText.trim() : document.body.innerText.slice(0, 3000);
-
-    const fullText = `${title} ${company} ${location} ${description}`;
-    const salary = parseSalary(fullText);
-    const remote = detectRemote(fullText);
-    const sponsorship = containsText(description, ['visa sponsor', 'h1b', 'work authorization']);
-
+    const ld = parseJsonLD();
+    const title = (ld && ld.title) || tryText('h1', '[class*="JobTitle"]', '[class*="job-title"]', '[class*="jobTitle"]', '[data-testid*="title"]');
+    const company = (ld && ld.company) || tryText('[class*="CompanyName"]', '[class*="company-name"]', '[class*="companyName"]', 'a[href*="/company/"]');
+    const location = (ld && ld.location) || tryText('[class*="Location"]', '[class*="location"]', '[data-testid*="location"]');
+    const description = (ld && ld.description) || tryLargestText('[class*="JobDescription"]', '[class*="job-description"]', '[class*="Description"]', 'article', 'main') || '';
+    const fullText = [title, company, location, description].join(' ');
     if (!title) return null;
-    return { title, company, location, description, salary, remote, sponsorship, easyApply: false, site: 'jobright' };
+    return { title, company, location, description, salary: parseSalary(fullText), remote: detectRemote(fullText), sponsorship: detectSponsorship(description), easyApply: false, site: 'jobright', url: location.href };
   }
 
-  // ─── Indeed Scraper ──────────────────────────────────────────────────────────
+  // ─── Indeed ──────────────────────────────────────────────────────────────────
 
   function scrapeIndeed() {
-    const title =
-      getText('[data-testid="jobsearch-JobInfoHeader-title"]') ||
-      getText('.jobsearch-JobInfoHeader-title') ||
-      getText('h1');
-
-    const company =
-      getText('[data-testid="inlineHeader-companyName"]') ||
-      getText('.jobsearch-InlineCompanyRating-companyHeader a') ||
-      getText('[class*="company"]');
-
-    const location =
-      getText('[data-testid="job-location"]') ||
-      getText('.jobsearch-JobInfoHeader-subtitle div:last-child');
-
-    const descEl =
-      document.querySelector('#jobDescriptionText') ||
-      document.querySelector('.jobsearch-jobDescriptionText');
-
-    const description = descEl ? descEl.innerText.trim() : '';
-
-    const salary =
-      parseSalary(getText('[data-testid="attribute_snippet_testid"]')) ||
-      parseSalary(description);
-
-    const fullText = `${title} ${company} ${location} ${description}`;
-    const remote = detectRemote(fullText);
-    const sponsorship = containsText(description, ['visa sponsor', 'h1b', 'work authorization sponsor']);
-
+    const ld = parseJsonLD();
+    const title = (ld && ld.title) || tryText('[data-testid="jobsearch-JobInfoHeader-title"] span', '[data-testid="jobsearch-JobInfoHeader-title"]', '.jobsearch-JobInfoHeader-title', 'h1');
+    const company = (ld && ld.company) || tryText('[data-testid="inlineHeader-companyName"] a', '[data-testid="inlineHeader-companyName"]', '[data-testid="company-name"]', '.jobsearch-InlineCompanyRating-companyHeader a');
+    const location = (ld && ld.location) || tryText('[data-testid="job-location"]', '[data-testid="inlineHeader-companyLocation"]', '.jobsearch-JobInfoHeader-subtitle span');
+    const description = (ld && ld.description) || tryLargestText('#jobDescriptionText', '.jobsearch-jobDescriptionText', '[id*="jobDescription"]', '[data-testid="job-description"]') || '';
+    const salaryEl = tryText('[data-testid="attribute_snippet_testid"]', '[class*="salary"]', '[data-testid*="salary"]');
+    const fullText = [title, company, location, description].join(' ');
     if (!title) return null;
-    return { title, company, location, description, salary, remote, sponsorship, easyApply: false, site: 'indeed' };
+    return { title, company, location, description, salary: parseSalary(salaryEl) || parseSalary(fullText), remote: detectRemote(fullText), sponsorship: detectSponsorship(description), easyApply: false, site: 'indeed', url: location.href };
   }
 
-  // ─── Greenhouse Scraper ──────────────────────────────────────────────────────
+  // ─── Greenhouse ──────────────────────────────────────────────────────────────
 
   function scrapeGreenhouse() {
-    const title = getText('.app-title') || getText('h1.job-post-name') || getText('h1');
-    const company = getText('.company-name') || getAttr('meta[property="og:site_name"]', 'content');
-    const location = getText('.location') || getText('[class*="location"]');
-    const descEl = document.querySelector('#content') || document.querySelector('.job-description');
-    const description = descEl ? descEl.innerText.trim() : '';
-
-    const fullText = `${title} ${company} ${location} ${description}`;
-    const salary = parseSalary(fullText);
-    const remote = detectRemote(fullText);
-    const sponsorship = containsText(description, ['visa sponsor', 'h1b', 'work authorization']);
-
+    const ld = parseJsonLD();
+    const title = (ld && ld.title) || tryText('.app-title', 'h1.job-post-name', '.posting-headline h2', 'h1');
+    const company = (ld && ld.company) || tryAttr('content', 'meta[property="og:site_name"]') || tryText('.company-name') || document.title.split(' - ').slice(-1)[0];
+    const location = (ld && ld.location) || tryText('.location', '.posting-categories .location', '[class*="location"]');
+    const description = (ld && ld.description) || tryLargestText('#content', '.job-description', '#job-description', '.content', 'article') || '';
+    const fullText = [title, company, location, description].join(' ');
     if (!title) return null;
-    return { title, company, location, description, salary, remote, sponsorship, easyApply: false, site: 'greenhouse' };
+    return { title, company, location, description, salary: parseSalary(fullText), remote: detectRemote(fullText), sponsorship: detectSponsorship(description), easyApply: false, site: 'greenhouse', url: location.href };
   }
 
-  // ─── Lever Scraper ──────────────────────────────────────────────────────────
+  // ─── Lever ───────────────────────────────────────────────────────────────────
 
   function scrapeLever() {
-    const title = getText('.posting-headline h2') || getText('h2') || getText('h1');
-    const company = getAttr('meta[property="og:site_name"]', 'content') || document.title.split(' - ').pop();
-    const location = getText('.location') || getText('.workplaceTypes') || getText('[class*="location"]');
-    const descEl = document.querySelector('.content') || document.querySelector('[class*="posting-description"]');
-    const description = descEl ? descEl.innerText.trim() : '';
-
-    const fullText = `${title} ${company} ${location} ${description}`;
-    const salary = parseSalary(fullText);
-    const remote = detectRemote(fullText);
-    const sponsorship = containsText(description, ['visa sponsor', 'h1b', 'work authorization']);
-
+    const ld = parseJsonLD();
+    const title = (ld && ld.title) || tryText('.posting-headline h2', '.posting h2', 'h2', 'h1');
+    const company = (ld && ld.company) || tryAttr('content', 'meta[property="og:site_name"]') || document.title.split(' - ')[1] || document.title.split('|')[1] || '';
+    const location = (ld && ld.location) || tryText('.location', '.workplaceTypes', '.posting-categories [class*="location"]');
+    const description = (ld && ld.description) || tryLargestText('.posting-description', '.content', '[class*="posting-description"]', 'article') || '';
+    const fullText = [title, company, location, description].join(' ');
     if (!title) return null;
-    return { title, company, location, description, salary, remote, sponsorship, easyApply: false, site: 'lever' };
+    return { title, company, location, description, salary: parseSalary(fullText), remote: detectRemote(fullText), sponsorship: detectSponsorship(description), easyApply: false, site: 'lever', url: location.href };
   }
 
-  // ─── Workday Scraper ─────────────────────────────────────────────────────────
+  // ─── Workday ─────────────────────────────────────────────────────────────────
 
   function scrapeWorkday() {
-    const title =
-      getText('[data-automation-id="jobPostingHeader"]') ||
-      getText('h2[data-automation-id*="title"]') ||
-      getText('h1');
-
-    const company =
-      getAttr('meta[property="og:site_name"]', 'content') ||
-      document.title.split('|').pop().trim();
-
-    const location =
-      getText('[data-automation-id="locations"]') ||
-      getText('[data-automation-id="location"]');
-
-    const descEl =
-      document.querySelector('[data-automation-id="jobPostingDescription"]') ||
-      document.querySelector('[class*="job-description"]');
-
-    const description = descEl ? descEl.innerText.trim() : '';
-
-    const fullText = `${title} ${company} ${location} ${description}`;
-    const salary = parseSalary(fullText);
-    const remote = detectRemote(fullText);
-    const sponsorship = containsText(description, ['visa sponsor', 'h1b', 'work authorization']);
-
+    const ld = parseJsonLD();
+    const title = (ld && ld.title) || tryText('[data-automation-id="jobPostingHeader"]', '[data-automation-id="Job_Posting_Header"]', 'h2[data-automation-id]', 'h1', 'h2');
+    const company = (ld && ld.company) || tryAttr('content', 'meta[property="og:site_name"]') || document.title.split('|').slice(-1)[0] || document.title.split('-').slice(-1)[0] || '';
+    const location = (ld && ld.location) || tryText('[data-automation-id="locations"]', '[data-automation-id="location"]', '[data-automation-id*="Location"]');
+    const description = (ld && ld.description) || tryLargestText('[data-automation-id="jobPostingDescription"]', '[class*="job-description"]', '[class*="rich-text"]', 'article') || '';
+    const fullText = [title, company, location, description].join(' ');
     if (!title) return null;
-    return { title, company, location, description, salary, remote, sponsorship, easyApply: false, site: 'workday' };
+    return { title, company, location, description, salary: parseSalary(fullText), remote: detectRemote(fullText), sponsorship: detectSponsorship(description), easyApply: false, site: 'workday', url: location.href };
   }
 
-  // ─── Main Scrape ─────────────────────────────────────────────────────────────
+  // ─── Main Scrape with Retry ───────────────────────────────────────────────────
 
   function scrape() {
     const site = detectSite();
@@ -220,64 +272,101 @@
 
     let data = null;
     try {
-      switch (site) {
-        case 'linkedin': data = scrapeLinkedIn(); break;
-        case 'jobright': data = scrapeJobright(); break;
-        case 'indeed': data = scrapeIndeed(); break;
-        case 'greenhouse': data = scrapeGreenhouse(); break;
-        case 'lever': data = scrapeLever(); break;
-        case 'workday': data = scrapeWorkday(); break;
-      }
+      if (site === 'linkedin')   data = scrapeLinkedIn();
+      else if (site === 'jobright')   data = scrapeJobright();
+      else if (site === 'indeed')     data = scrapeIndeed();
+      else if (site === 'greenhouse') data = scrapeGreenhouse();
+      else if (site === 'lever')      data = scrapeLever();
+      else if (site === 'workday')    data = scrapeWorkday();
     } catch (e) {
       console.warn('[JobHunt] Scrape error:', e);
     }
 
-    if (data && JSON.stringify(data) !== JSON.stringify(lastJobData)) {
+    if (!data || !data.title) {
+      if (retryCount < MAX_RETRIES) {
+        retryCount++;
+        const delay = Math.min(1000 * retryCount, 5000);
+        clearTimeout(scrapeTimeout);
+        scrapeTimeout = setTimeout(scrape, delay);
+        chrome.runtime.sendMessage({ type: 'SCRAPE_PROGRESS', progress: retryCount, total: MAX_RETRIES, site }).catch(function(){});
+      } else {
+        chrome.runtime.sendMessage({ type: 'SCRAPE_FAILED', site }).catch(function(){});
+      }
+      return;
+    }
+
+    retryCount = 0;
+    if (JSON.stringify(data) !== JSON.stringify(lastJobData)) {
       lastJobData = data;
-      chrome.runtime.sendMessage({ type: 'JOB_DATA', payload: data }).catch(() => {});
+      console.log('[JobHunt] Scraped:', data.title, '@', data.company);
+      chrome.runtime.sendMessage({ type: 'JOB_DATA', payload: data }).catch(function(){});
     }
   }
 
-  // ─── SPA URL Change Detection ─────────────────────────────────────────────────
+  // ─── SPA Navigation ──────────────────────────────────────────────────────────
 
   function onUrlChange() {
     const current = location.href;
     if (current !== lastUrl) {
       lastUrl = current;
       lastJobData = null;
+      retryCount = 0;
       clearTimeout(scrapeTimeout);
-      scrapeTimeout = setTimeout(scrape, 1500);
+      scrapeTimeout = setTimeout(scrape, 1200);
     }
   }
 
-  // Observe DOM mutations for SPA navigation
-  const observer = new MutationObserver(onUrlChange);
-  observer.observe(document.body, { subtree: true, childList: true });
+  let mutationTimer = null;
+  const observer = new MutationObserver(function() {
+    clearTimeout(mutationTimer);
+    mutationTimer = setTimeout(onUrlChange, 400);
+  });
+  observer.observe(document.body, { subtree: false, childList: true });
 
-  // Also patch history API
   const origPush = history.pushState.bind(history);
   const origReplace = history.replaceState.bind(history);
-  history.pushState = function (...args) { origPush(...args); onUrlChange(); };
-  history.replaceState = function (...args) { origReplace(...args); onUrlChange(); };
-  window.addEventListener('popstate', onUrlChange);
+  history.pushState = function() { origPush.apply(history, arguments); setTimeout(onUrlChange, 100); };
+  history.replaceState = function() { origReplace.apply(history, arguments); setTimeout(onUrlChange, 100); };
+  window.addEventListener('popstate', function() { setTimeout(onUrlChange, 100); });
 
   // ─── Message Listener ─────────────────────────────────────────────────────────
 
-  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    if (msg.type === 'REQUEST_JOB_DATA') {
-      scrape();
-      sendResponse({ payload: lastJobData });
+  chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse) {
+    if (msg.type === 'PING') {
+      sendResponse({ ok: true });
       return true;
     }
-    if (msg.type === 'AUTOFILL_TRIGGER') {
-      chrome.runtime.sendMessage({ type: 'INJECT_AUTOFILL' });
+    if (msg.type === 'REQUEST_JOB_DATA') {
+      if (lastJobData) {
+        sendResponse({ payload: lastJobData });
+        return true;
+      }
+      retryCount = 0;
+      scrape();
+      var waited = 0;
+      var waitInterval = setInterval(function() {
+        waited += 200;
+        if (lastJobData) {
+          clearInterval(waitInterval);
+          sendResponse({ payload: lastJobData });
+        } else if (waited >= 4000) {
+          clearInterval(waitInterval);
+          sendResponse({ payload: null });
+        }
+      }, 200);
+      return true;
+    }
+    if (msg.type === 'FORCE_RESCRAPE') {
+      lastJobData = null;
+      retryCount = 0;
+      clearTimeout(scrapeTimeout);
+      scrape();
       sendResponse({ ok: true });
       return true;
     }
   });
 
-  // Initial scrape after page settles
-  setTimeout(scrape, 1500);
-
+  // Initial scrape
+  scrape();
   console.log('[JobHunt AI Copilot] Content script loaded on', detectSite() || location.hostname);
 })();
