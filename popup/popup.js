@@ -292,10 +292,10 @@ function renderJobData(data) {
   if (data.sponsorship) chipsEl.appendChild(makeChip('Visa Sponsor', 'chip-visa'));
   if (data._isSession) chipsEl.appendChild(makeChip('📌 Restored', 'chip-site'));
 
-  // Reset ATS ring
+  // Reset ATS ring — SVG elements need setAttribute, .className is read-only on SVGElement
   const ring = $('ats-ring-circle');
   ring.style.strokeDashoffset = '188.5';
-  ring.className = 'ats-ring-fill';
+  ring.setAttribute('class', 'ats-ring-fill');
   $('ats-score-num').textContent = '—';
   $('ats-ring-title').textContent = 'Run Analysis';
   $('ats-ring-desc').textContent = 'Click Analyze to compute your ATS match score.';
@@ -446,12 +446,12 @@ $('btn-analyze').addEventListener('click', async () => {
   setAnalysisProgress('', 0);
   hideAnalysisProgress();
 
-  // Animate ring
+  // Animate ring — SVG elements require setAttribute; .className is read-only on SVGElement
   const overall = matchResult.overall;
   const circumference = 188.5;
   const offset = circumference - (overall / 100) * circumference;
   const ring = $('ats-ring-circle');
-  ring.className = 'ats-ring-fill' + (overall >= 80 ? '' : overall >= 60 ? ' warn' : ' bad');
+  ring.setAttribute('class', 'ats-ring-fill' + (overall >= 80 ? '' : overall >= 60 ? ' warn' : ' bad'));
   setTimeout(() => { ring.style.strokeDashoffset = offset; }, 50);
 
   $('ats-score-num').textContent = overall;
