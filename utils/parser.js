@@ -17,7 +17,7 @@ const TECH_PATTERNS = [
   // APIs & Protocols
   'rest', 'graphql', 'grpc', 'websocket', 'openapi', 'swagger',
   // Practices
-  'microservices', 'distributed systems', 'system design', 'agile', 'scrum', 'tdd', 'bdd', 'ci/cd',
+  'microservices', 'distributed systems', 'system design', 'agile', 'scrum', 'tdd', 'bdd',
   // Soft skills / experience
   'leadership', 'mentoring', 'cross-functional', 'stakeholder'
 ];

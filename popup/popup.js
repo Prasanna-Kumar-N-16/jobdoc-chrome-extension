@@ -32,7 +32,11 @@ function flashCopy(btn) {
 }
 
 function copyToClipboard(text, btn) {
-  navigator.clipboard.writeText(text || '').then(() => { if (btn) flashCopy(btn); });
+  navigator.clipboard.writeText(text || '').then(() => {
+    if (btn) flashCopy(btn);
+  }).catch(() => {
+    showToast('Copy failed — select and copy manually');
+  });
 }
 
 // ─── Session Persistence ────────────────────────────────────────────────────
@@ -47,9 +51,12 @@ async function loadSession() {
   try {
     const result = await chrome.storage.local.get(SESSION_KEY);
     const session = result[SESSION_KEY];
-    // Expire sessions older than 24 hours
     if (session && session.jobData && (Date.now() - session.savedAt) < 86400000) {
       return session.jobData;
+    }
+    // Clean up expired or invalid session data
+    if (session) {
+      await chrome.storage.local.remove(SESSION_KEY);
     }
   } catch { }
   return null;
@@ -152,8 +159,8 @@ async function requestJobData() {
     // First check if we have a saved session
     const saved = await loadSession();
     if (saved) {
-      currentJobData = saved;
-      renderJobData(saved);
+      currentJobData = { ...saved, _isSession: true };
+      renderJobData(currentJobData);
       showToast('Restored previous session');
       return;
     }
@@ -354,6 +361,7 @@ $('btn-submit-manual').addEventListener('click', async () => {
     sponsorship: detectSponsorLocal(jd),
     easyApply:   false,
     site:        'manual',
+    url:         null,
     _isManual:   true
   };
 
@@ -592,8 +600,9 @@ async function runGenerate(customInstruction) {
       if (cursor) box.insertBefore(document.createTextNode(token), cursor);
       else box.textContent += token;
       box.scrollTop = box.scrollHeight;
-      // Update progress based on token count (estimate ~300 tokens max)
-      const estPct = Math.min(Math.round((tokenCount / 280) * 90), 90);
+      // Estimate progress: pitch/dm ~100 tokens, resume/cover ~500 tokens
+      const estMax = (currentMode === 'pitch' || currentMode === 'dm') ? 100 : 500;
+      const estPct = Math.min(Math.round((tokenCount / estMax) * 90), 90);
       showGenProgress(estPct, 'Generating with ' + currentModel + '… (' + tokenCount + ' tokens)');
     },
     async () => {
@@ -767,8 +776,14 @@ $('btn-add-skill').addEventListener('click', addSkillFromInput);
 
 function addSkillFromInput() {
   const input = $('me-skills-input');
+  const existing = new Set(
+    Array.from($$('#skill-tags .skill-tag'))
+      .map(t => (t.childNodes[0] && t.childNodes[0].textContent || '').trim().toLowerCase())
+  );
   const skills = input.value.trim().split(',').map(s => s.trim()).filter(Boolean);
   skills.forEach(skill => {
+    if (existing.has(skill.toLowerCase())) return;
+    existing.add(skill.toLowerCase());
     const tag = document.createElement('span');
     tag.className = 'skill-tag'; tag.textContent = skill;
     const x = document.createElement('button');
@@ -814,9 +829,11 @@ $('btn-save-profile').addEventListener('click', async () => {
 
 async function initSetupTab() {
   updateSetupStatus('warn', 'Checking…', '');
+  const { settings } = await chrome.storage.local.get('settings').catch(() => ({ settings: null }));
+  const ollamaUrl = (settings && settings.ollamaUrl) || 'http://localhost:11434';
   const result = await testConnection();
   if (result.ok) {
-    updateSetupStatus('ok', 'Connected · ' + result.models.length + ' model(s)', 'http://localhost:11434');
+    updateSetupStatus('ok', 'Connected · ' + result.models.length + ' model(s)', ollamaUrl);
     populateModelSelectors(result.models);
     setHeaderStatus('ok', 'Ollama ✓');
   } else if (result.error === 'cors') {
@@ -826,7 +843,6 @@ async function initSetupTab() {
     updateSetupStatus('err', 'Offline', 'Run: ollama serve');
     setHeaderStatus('err', 'Offline');
   }
-  const { settings } = await chrome.storage.local.get('settings').catch(() => ({ settings: null }));
   if (settings && settings.model) {
     const sel = $('setup-model');
     if (sel) Array.from(sel.options).forEach(o => { if (o.value === settings.model) o.selected = true; });

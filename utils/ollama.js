@@ -144,6 +144,6 @@ export function buildPrompt(mode, profile, jobData) {
       return `Write a LinkedIn cold outreach message to a recruiter at ${company} for the ${title} role. Keep it under 60 words. Friendly, direct, reference one specific thing about the company or the role. Do NOT start with "I hope this finds you well" or any generic opener. End with a simple question or call to action. User background: ${summary}.`;
 
     default:
-      return prompt;
+      return `You are an expert career coach. Help this candidate: ${summary}. Skills: ${skills}. Role: ${title} at ${company}.`;
   }
 }
