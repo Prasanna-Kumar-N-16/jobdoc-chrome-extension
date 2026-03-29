@@ -1,36 +1,73 @@
 {
   "manifest_version": 3,
-  "name": "AI Job Applicant — Powered by Ollama",
-  "version": "1.1.0",
-  "description": "ATS resume analyzer + tailored resume generator using local Ollama. No API keys, 100% private.",
-  "permissions": ["activeTab","scripting","storage","downloads","tabs"],
-  "host_permissions": ["<all_urls>","http://localhost:11434/*"],
-  "background": {
-    "service_worker": "background/service-worker.js",
-    "type": "module"
-  },
-  "content_scripts": [{
-    "matches": ["<all_urls>"],
-    "js": ["content/content.js"],
-    "run_at": "document_idle"
-  }],
+  "name": "JobHunt AI Copilot",
+  "version": "4.0.0",
+  "description": "Local, free, AI-powered job application assistant using Ollama. No paid APIs. No cloud.",
   "action": {
     "default_popup": "popup/popup.html",
     "default_icon": {
-      "16": "assets/icon16.png",
-      "32": "assets/icon32.png",
-      "48": "assets/icon48.png",
-      "128": "assets/icon128.png"
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
     }
   },
-  "icons": {
-    "16": "assets/icon16.png",
-    "32": "assets/icon32.png",
-    "48": "assets/icon48.png",
-    "128": "assets/icon128.png"
+  "background": {
+    "service_worker": "background/service_worker.js",
+    "type": "module"
   },
-  "web_accessible_resources": [{
-    "resources": ["assets/*","popup/defaults.js"],
-    "matches": ["<all_urls>"]
-  }]
+  "content_scripts": [
+    {
+      "matches": [
+        "*://www.linkedin.com/jobs/*",
+        "*://linkedin.com/jobs/*",
+        "*://jobright.ai/*",
+        "*://www.indeed.com/*",
+        "*://indeed.com/*",
+        "*://*.greenhouse.io/*",
+        "*://*.lever.co/*",
+        "*://*.myworkdayjobs.com/*"
+      ],
+      "js": ["content/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "*://www.linkedin.com/*",
+    "*://linkedin.com/*",
+    "*://jobright.ai/*",
+    "*://www.indeed.com/*",
+    "*://indeed.com/*",
+    "*://*.greenhouse.io/*",
+    "*://*.lever.co/*",
+    "*://*.myworkdayjobs.com/*",
+    "http://localhost:11434/*"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["content/autofill.js"],
+      "matches": [
+        "*://www.linkedin.com/*",
+        "*://linkedin.com/*",
+        "*://jobright.ai/*",
+        "*://www.indeed.com/*",
+        "*://indeed.com/*",
+        "*://*.greenhouse.io/*",
+        "*://*.lever.co/*",
+        "*://*.myworkdayjobs.com/*"
+      ]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
 }

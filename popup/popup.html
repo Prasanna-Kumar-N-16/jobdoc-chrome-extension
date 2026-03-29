@@ -1,236 +1,422 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>AI Job Applicant</title>
-<style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=DM+Mono:wght@400;500&display=swap');
-:root{--bg:#0d0f14;--s1:#161920;--s2:#1e2130;--border:#2a2f42;--accent:#6366f1;--a2:#818cf8;--green:#34d399;--red:#f87171;--yellow:#fbbf24;--text:#e2e8f0;--muted:#64748b;--r:10px;}
-*{margin:0;padding:0;box-sizing:border-box;}
-body{width:480px;min-height:580px;background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;}
-.hdr{padding:13px 16px;background:var(--s1);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
-.logo{display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px;letter-spacing:-.3px;}
-.logo-icon{width:28px;height:28px;border-radius:7px;background:linear-gradient(135deg,#6366f1,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:13px;}
-.hdr-right{display:flex;align-items:center;gap:8px;}
-.status-pill{display:flex;align-items:center;gap:5px;background:var(--s2);border:1px solid var(--border);border-radius:20px;padding:3px 9px;font-size:11px;color:var(--muted);}
-.dot{width:7px;height:7px;border-radius:50%;background:var(--muted);}
-.dot.on{background:var(--green);box-shadow:0 0 5px var(--green);}
-.dot.off{background:var(--red);}
-.icon-btn{width:28px;height:28px;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;transition:.15s;}
-.icon-btn:hover{background:var(--s2);color:var(--text);}
-.tabs{display:flex;gap:2px;background:var(--s1);border-bottom:1px solid var(--border);padding:0 12px;}
-.tab{padding:9px 12px;font-size:12px;font-weight:500;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:.15s;}
-.tab:hover{color:var(--text);}
-.tab.active{color:var(--a2);border-bottom-color:var(--accent);}
-.panel{display:none;}
-.panel.active{display:flex;flex-direction:column;}
-.jd-panel{padding:14px;gap:10px;}
-.field-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:5px;}
-textarea,input,select{width:100%;background:var(--s1);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:12.5px;padding:9px 11px;outline:none;transition:.15s;resize:vertical;}
-textarea:focus,input:focus,select:focus{border-color:var(--accent);}
-#jdInput{min-height:220px;line-height:1.5;}
-.char-count{font-size:10px;color:var(--muted);text-align:right;margin-top:3px;}
-.btn{padding:10px 16px;border-radius:8px;border:none;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:7px;transition:.15s;}
-.btn:disabled{opacity:.35;cursor:not-allowed;}
-.btn-primary{background:var(--accent);color:#fff;}
-.btn-primary:hover:not(:disabled){background:var(--a2);transform:translateY(-1px);}
-.btn-secondary{background:var(--s2);color:var(--text);border:1px solid var(--border);}
-.btn-secondary:hover:not(:disabled){border-color:var(--accent);}
-.btn-green{background:rgba(52,211,153,.12);color:var(--green);border:1px solid rgba(52,211,153,.25);}
-.btn-green:hover:not(:disabled){background:rgba(52,211,153,.2);}
-.btn-yellow{background:rgba(251,191,36,.13);color:var(--yellow);border:1px solid rgba(251,191,36,.32);}
-.btn-yellow:hover:not(:disabled){background:rgba(251,191,36,.22);}
-.btn-indigo{background:linear-gradient(135deg,rgba(99,102,241,.18),rgba(167,139,250,.12));color:var(--a2);border:1px solid rgba(99,102,241,.4);font-weight:600;}
-.btn-indigo:hover:not(:disabled){background:linear-gradient(135deg,rgba(99,102,241,.28),rgba(167,139,250,.2));border-color:var(--accent);}
-.btn-sm{padding:7px 12px;font-size:12px;}
-.btn-cancel{background:transparent;color:var(--red);border:1px solid rgba(248,113,113,.6);}
-.btn-cancel:hover:not(:disabled){background:rgba(248,113,113,.08);}
-.cors-box{background:#1a0f0f;border:1px solid #f8717133;border-radius:var(--r);overflow:hidden;}
-.cors-head{padding:10px 13px;background:rgba(248,113,113,.08);font-size:12px;color:var(--red);font-weight:500;}
-.cors-body{padding:12px 13px;}
-.os-btns{display:flex;gap:6px;margin-bottom:10px;}
-.os-btn{flex:1;padding:7px 6px;border-radius:7px;border:1px solid var(--border);background:var(--s2);color:var(--text);cursor:pointer;font-size:11.5px;font-family:'DM Sans',sans-serif;transition:.15s;text-align:center;}
-.os-btn:hover{border-color:var(--accent);}
-.cmd-block{background:#0d0f14;border:1px solid var(--border);border-radius:6px;padding:9px 11px;font-family:'DM Mono',monospace;font-size:10.5px;color:#a5b4fc;line-height:1.9;white-space:pre;overflow-x:auto;cursor:pointer;position:relative;margin-bottom:8px;}
-.cmd-block::after{content:'click to copy';position:absolute;top:6px;right:8px;font-size:9px;color:var(--muted);font-family:'DM Sans',sans-serif;}
-.cmd-block.copied::after{content:'✓ copied!';color:var(--green);}
-.progress-box{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:22px 16px;text-align:center;}
-.spinner{width:34px;height:34px;margin:0 auto 12px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;}
-@keyframes spin{to{transform:rotate(360deg);}}
-.progress-msg{font-size:12px;color:var(--muted);font-family:'DM Mono',monospace;}
-.stream-preview{margin-top:12px;background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:10px;max-height:120px;overflow-y:auto;font-size:10.5px;color:#475569;text-align:left;line-height:1.5;font-family:'DM Mono',monospace;}
-.progress-actions{margin-top:10px;display:flex;justify-content:flex-end;}
-.results-panel{padding:0;overflow-y:auto;max-height:530px;}
-.score-header{background:linear-gradient(135deg,#1e1b4b,#1e2130);border-bottom:1px solid var(--border);padding:16px;display:flex;align-items:center;gap:16px;}
-.big-score{font-size:42px;font-weight:700;font-family:'DM Mono',monospace;line-height:1;}
-.score-meta{flex:1;}
-.score-title{font-size:13px;font-weight:600;margin-bottom:3px;}
-.score-sub{font-size:11px;color:var(--muted);}
-.score-bar-track{height:6px;background:var(--s2);border-radius:3px;overflow:hidden;margin-top:8px;}
-.score-bar-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--accent),var(--green));transition:width 1s cubic-bezier(.34,1.56,.64,1);width:0;}
-.result-actions{display:flex;gap:6px;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--s1);flex-wrap:wrap;}
-.report-content{padding:14px 16px;font-size:12.5px;line-height:1.65;color:#cbd5e1;}
-.report-content h2{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--a2);margin:18px 0 8px;padding-bottom:5px;border-bottom:1px solid var(--border);}
-.report-content h2:first-child{margin-top:0;}
-.report-content h3{font-size:12.5px;font-weight:600;color:var(--text);margin:12px 0 5px;}
-.report-content p{margin-bottom:7px;}
-.report-content ul{padding-left:16px;margin-bottom:8px;}
-.report-content li{margin-bottom:3px;}
-.report-content strong{color:var(--text);font-weight:600;}
-.report-content table{width:100%;border-collapse:collapse;margin:8px 0 12px;font-size:11.5px;}
-.report-content th{background:var(--s2);color:var(--a2);font-weight:600;padding:7px 9px;text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;border:1px solid var(--border);}
-.report-content td{padding:7px 9px;border:1px solid var(--border);vertical-align:top;line-height:1.5;}
-.report-content tr:nth-child(even) td{background:rgba(30,33,48,.5);}
-.badge{display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:600;}
-.badge-g{background:rgba(52,211,153,.12);color:var(--green);border:1px solid rgba(52,211,153,.25);}
-.badge-r{background:rgba(248,113,113,.12);color:var(--red);border:1px solid rgba(248,113,113,.25);}
-.badge-y{background:rgba(251,191,36,.12);color:var(--yellow);border:1px solid rgba(251,191,36,.25);}
-.session-banner{display:none;align-items:center;justify-content:space-between;padding:8px 14px;background:rgba(99,102,241,.08);border-bottom:1px solid rgba(99,102,241,.2);}
-.session-banner.visible{display:flex;}
-.settings-panel{padding:14px;gap:10px;overflow-y:auto;max-height:530px;}
-.form-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
-.field{display:flex;flex-direction:column;gap:4px;}
-.save-btn{background:var(--accent);color:#fff;padding:10px;border-radius:8px;border:none;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;width:100%;}
-.save-btn:hover{background:var(--a2);}
-.reset-btn{background:var(--s2);color:var(--muted);border:1px solid var(--border);padding:9px;border-radius:8px;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:12px;width:100%;margin-top:6px;}
-.reset-btn:hover{color:var(--text);border-color:var(--accent);}
-.toast{padding:9px 12px;border-radius:7px;font-size:12px;align-items:center;gap:7px;margin-top:8px;}
-.toast-ok{background:rgba(52,211,153,.08);border:1px solid rgba(52,211,153,.25);color:var(--green);}
-.toast-err{background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.25);color:var(--red);}
-.model-row{display:flex;gap:6px;}
-.model-row select{flex:1;}
-.divider{height:1px;background:var(--border);}
-.hint{font-size:10.5px;color:var(--muted);margin-top:3px;line-height:1.4;}
-::-webkit-scrollbar{width:4px;}
-::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JobHunt AI Copilot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;0,9..144,700;1,9..144,300&family=Geist+Mono:wght@300;400;500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-<div class="hdr">
-  <div class="logo"><div class="logo-icon">✦</div>AI Job Applicant</div>
-  <div class="hdr-right">
-    <div class="status-pill"><div class="dot" id="dot"></div><span id="statusLbl">checking…</span></div>
-    <button class="icon-btn" id="btnSettings" title="Settings">⚙</button>
-  </div>
-</div>
-<div class="tabs">
-  <div class="tab active" data-tab="jd">Analyze</div>
-  <div class="tab" data-tab="results" id="tabResults" style="display:none">Report</div>
-  <div class="tab" data-tab="settings">Profile</div>
-</div>
+<div class="popup">
 
-<!-- ANALYZE -->
-<div class="panel active jd-panel" id="panel-jd">
-  <div id="corsBox" style="display:none" class="cors-box">
-    <div class="cors-head">⚠ Ollama blocked the request (403 CORS) — pick your OS:</div>
-    <div class="cors-body">
-      <div class="os-btns">
-        <div class="os-btn" onclick="showCmd('mac')">🍎 macOS</div>
-        <div class="os-btn" onclick="showCmd('win')">🪟 Windows</div>
-        <div class="os-btn" onclick="showCmd('linux')">🐧 Linux</div>
+  <!-- ─── Header ─────────────────────────────────────────────── -->
+  <header class="p-hdr">
+    <div class="p-logo">
+      <div class="p-logo-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M12 2v3m0 14v3M2 12h3m14 0h3"/>
+          <path d="m4.9 4.9 2.1 2.1m9.9 9.9 2.1 2.1m0-14.1-2.1 2.1M7 17 4.9 19.1"/>
+        </svg>
       </div>
-      <div id="cmdArea" style="display:none">
-        <div class="cmd-block" id="cmdText" onclick="copyCmd(this)"></div>
-        <div class="hint" id="cmdNote"></div>
-        <button class="btn btn-green btn-sm" style="margin-top:8px;width:100%" onclick="recheckCors()">✓ Done — Test Connection</button>
+      <div>
+        <div class="p-logo-text">JobHunt AI</div>
+        <div class="p-logo-sub">Copilot · Free · Local</div>
       </div>
     </div>
-  </div>
-  <div>
-    <div class="field-label">Paste Job Description</div>
-    <textarea id="jdInput" placeholder="Paste the full job description here…"></textarea>
-    <div class="char-count"><span id="charCount">0</span> chars</div>
-  </div>
-  <button class="btn btn-primary" id="btnAnalyze" style="width:100%">✦ Analyze &amp; Generate Resume</button>
-  <div class="progress-box" id="progressBox" style="display:none">
-    <div class="spinner"></div>
-    <div class="progress-msg" id="progressMsg">Connecting to Ollama…</div>
-    <div class="stream-preview" id="streamPreview"></div>
-    <div class="progress-actions">
-      <button class="btn btn-cancel btn-sm" id="btnCancelAnalysis">✕ Cancel</button>
+    <div style="display:flex;align-items:center;gap:6px">
+      <button class="btn btn-xs btn-outline" id="btn-new-session" title="Start new session" style="font-size:10px;padding:3px 7px">New Session</button>
+      <div class="p-status warn" id="hdr-status">
+        <div class="dot"></div>
+        <span id="hdr-status-text">Connecting…</span>
+      </div>
     </div>
-  </div>
+  </header>
+
+  <!-- ─── Tabs ───────────────────────────────────────────────── -->
+  <nav class="p-tabs">
+    <button class="p-tab on" data-tab="job">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+      Job
+    </button>
+    <button class="p-tab" data-tab="generate">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      Generate
+    </button>
+    <button class="p-tab" data-tab="fill">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+      Fill
+    </button>
+    <button class="p-tab" data-tab="log">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>
+      Log
+    </button>
+    <button class="p-tab" data-tab="me">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M6 20v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg>
+      Me
+    </button>
+    <button class="p-tab" data-tab="setup">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      Setup
+    </button>
+  </nav>
+
+  <!-- ─── Body ───────────────────────────────────────────────── -->
+  <main class="p-body">
+
+    <!-- ══════ JOB TAB ══════ -->
+    <div class="tab-panel active" id="panel-job">
+
+      <!-- LOADING STATE (new) -->
+      <div id="job-loading" class="hidden">
+        <div style="padding:20px 16px 0">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <span class="lbl" style="margin:0" id="job-loading-msg">Scanning page…</span>
+            <span style="font-family:'Geist Mono',monospace;font-size:10px;color:var(--teal)" id="job-loading-pct">0%</span>
+          </div>
+          <div class="job-loading-bar-wrap">
+            <div class="job-loading-bar-fill" id="job-loading-bar" style="width:0%"></div>
+          </div>
+        </div>
+        <div class="loading-overlay" style="padding:16px">
+          <div class="spinner dark"></div>
+          <span style="font-size:12px;color:var(--muted)">Detecting job posting…</span>
+        </div>
+        <div style="padding:0 16px 14px;text-align:center">
+          <span style="font-size:11px;color:var(--muted)">Takes longer on LinkedIn — it loads content dynamically</span>
+        </div>
+      </div>
+
+      <!-- EMPTY STATE -->
+      <div id="job-empty" class="empty">
+        <div class="empty-icon">🔍</div>
+        <div class="empty-title">No job detected</div>
+        <div class="empty-desc">Navigate to a job posting on a supported site, or paste the JD manually below.</div>
+        <div style="display:flex;gap:8px;margin-bottom:14px">
+          <button class="btn btn-ghost-teal btn-sm" id="btn-rescan">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+            Re-scan Page
+          </button>
+          <button class="btn btn-outline btn-sm" id="btn-enter-manually">✏ Enter Manually</button>
+        </div>
+        <div class="site-grid" style="width:100%">
+          <div class="site-cell"><div class="site-cell-icon">💼</div>LinkedIn</div>
+          <div class="site-cell"><div class="site-cell-icon">🎯</div>Jobright</div>
+          <div class="site-cell"><div class="site-cell-icon">🔵</div>Indeed</div>
+          <div class="site-cell"><div class="site-cell-icon">🌿</div>Greenhouse</div>
+          <div class="site-cell"><div class="site-cell-icon">⚡</div>Lever</div>
+          <div class="site-cell"><div class="site-cell-icon">☁️</div>Workday</div>
+        </div>
+      </div>
+
+      <!-- MANUAL ENTRY (new) -->
+      <div id="job-manual" class="hidden">
+        <div class="p-section">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <span style="font-weight:600;font-size:13px;color:var(--head)">✏ Manual Job Entry</span>
+            <button class="btn btn-xs btn-outline" id="btn-cancel-manual">Cancel</button>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="manual-title">Job Title</label>
+            <input class="form-input" id="manual-title" type="text" placeholder="e.g. Senior Backend Engineer">
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div class="form-group">
+              <label class="form-label" for="manual-company">Company</label>
+              <input class="form-input" id="manual-company" type="text" placeholder="e.g. Stripe">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="manual-location">Location</label>
+              <input class="form-input" id="manual-location" type="text" placeholder="e.g. Remote, TX">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="manual-jd">
+              Full Job Description
+              <span style="float:right;color:var(--muted);font-family:'Outfit',sans-serif;text-transform:none;letter-spacing:0;font-size:10px">Paste the entire JD here</span>
+            </label>
+            <textarea class="textarea" id="manual-jd" rows="8" placeholder="Paste the full job description here. The AI uses this to generate tailored resumes, cover letters, and compute your ATS score…"></textarea>
+          </div>
+          <button class="btn btn-teal btn-full" id="btn-submit-manual">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            Load Job
+          </button>
+        </div>
+      </div>
+
+      <!-- CORS ERROR STATE -->
+      <div id="job-cors" class="p-section hidden">
+        <div class="cors-box">
+          <div class="cors-box-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            CORS Error — Ollama blocked
+          </div>
+          <div class="cors-box-desc">Restart Ollama with CORS origins allowed:</div>
+          <div class="os-tabs" id="job-cors-os-tabs">
+            <button class="os-tab on" data-os="mac">macOS</button>
+            <button class="os-tab" data-os="win">Windows</button>
+            <button class="os-tab" data-os="linux">Linux</button>
+          </div>
+          <div class="os-panel on" id="job-cors-mac"><div class="code-block">OLLAMA_ORIGINS=* ollama serve<button class="code-copy-btn">Copy</button></div></div>
+          <div class="os-panel" id="job-cors-win"><div class="code-block">$env:OLLAMA_ORIGINS="*"; ollama serve<button class="code-copy-btn">Copy</button></div></div>
+          <div class="os-panel" id="job-cors-linux"><div class="code-block">OLLAMA_ORIGINS=* ollama serve<button class="code-copy-btn">Copy</button></div></div>
+          <button class="btn btn-outline btn-sm mt-8" id="job-cors-test-btn">Test Connection</button>
+        </div>
+      </div>
+
+      <!-- JOB DATA STATE -->
+      <div id="job-data" class="hidden">
+        <div class="job-card">
+          <div class="job-title" id="job-title">—</div>
+          <div class="job-company" id="job-company">—</div>
+          <div class="job-chips" id="job-chips"></div>
+        </div>
+
+        <!-- Analysis progress (shown during analyze) -->
+        <div id="analysis-progress" class="hidden" style="padding:10px 16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+            <span class="lbl" style="margin:0" id="analysis-label">Analyzing…</span>
+            <span style="font-family:'Geist Mono',monospace;font-size:10px;color:var(--teal)" id="analysis-pct">0%</span>
+          </div>
+          <div class="job-loading-bar-wrap">
+            <div class="job-loading-bar-fill" id="analysis-bar" style="width:0%"></div>
+          </div>
+        </div>
+
+        <!-- ATS Score Ring -->
+        <div class="ats-ring-wrap">
+          <div class="ats-ring">
+            <svg viewBox="0 0 72 72" width="72" height="72">
+              <circle class="ats-ring-bg" cx="36" cy="36" r="30"/>
+              <circle class="ats-ring-fill" id="ats-ring-circle" cx="36" cy="36" r="30"/>
+            </svg>
+            <div class="ats-ring-label">
+              <span class="ats-ring-num" id="ats-score-num">—</span>
+              <span class="ats-ring-pct">ATS</span>
+            </div>
+          </div>
+          <div class="ats-ring-info">
+            <div class="ats-ring-title" id="ats-ring-title">Run Analysis</div>
+            <div class="ats-ring-desc" id="ats-ring-desc">Click Analyze to compute your ATS match score against this job.</div>
+          </div>
+        </div>
+
+        <!-- Match Bars -->
+        <div class="match-bars" id="match-bars" style="display:none">
+          <span class="lbl">Match Score</span>
+          <div class="match-row">
+            <span class="match-label">Overall</span>
+            <div class="match-bar-wrap"><div class="match-bar-fill" id="bar-overall" style="width:0%"></div></div>
+            <span class="match-pct" id="pct-overall">0%</span>
+          </div>
+          <div class="match-row">
+            <span class="match-label">Skills</span>
+            <div class="match-bar-wrap"><div class="match-bar-fill" id="bar-skills" style="width:0%"></div></div>
+            <span class="match-pct" id="pct-skills">0%</span>
+          </div>
+          <div class="match-row">
+            <span class="match-label">Experience</span>
+            <div class="match-bar-wrap"><div class="match-bar-fill" id="bar-exp" style="width:0%"></div></div>
+            <span class="match-pct" id="pct-exp">0%</span>
+          </div>
+        </div>
+
+        <!-- Skill Chips -->
+        <div class="skills-section" id="skills-section" style="display:none">
+          <span class="lbl">Keywords</span>
+          <div class="sk-chips" id="sk-chips"></div>
+          <div class="mt-8" style="display:flex;gap:8px;font-size:11px;color:var(--muted)">
+            <span style="display:flex;align-items:center;gap:3px"><span class="sk sk-y" style="padding:1px 6px">●</span> Matched</span>
+            <span style="display:flex;align-items:center;gap:3px"><span class="sk sk-m" style="padding:1px 6px">●</span> Partial</span>
+            <span style="display:flex;align-items:center;gap:3px"><span class="sk sk-n" style="padding:1px 6px">●</span> Missing</span>
+          </div>
+        </div>
+
+        <!-- Action buttons -->
+        <div class="action-bar">
+          <button class="btn btn-outline flex-1" id="btn-analyze">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            Analyze
+          </button>
+          <button class="btn btn-teal flex-1" id="btn-go-generate">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            Generate
+          </button>
+          <button class="btn btn-outline btn-sm" id="btn-log-job" title="Log this application">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ GENERATE TAB ══════ -->
+    <div class="tab-panel" id="panel-generate">
+      <div class="modes">
+        <button class="mode-btn on" data-mode="resume">Resume</button>
+        <button class="mode-btn" data-mode="cover">Cover Letter</button>
+        <button class="mode-btn" data-mode="pitch">Elevator Pitch</button>
+        <button class="mode-btn" data-mode="dm">LinkedIn DM</button>
+      </div>
+
+      <div id="gen-no-job" class="p-section hidden">
+        <div class="notice notice-amber">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          No job detected. Output will use your profile only.
+        </div>
+      </div>
+
+      <!-- Generation progress bar (new) -->
+      <div id="gen-progress" class="hidden" style="padding:8px 16px 0">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+          <span style="font-family:'Geist Mono',monospace;font-size:10px;color:var(--teal)" id="gen-progress-label">Generating…</span>
+          <span style="font-family:'Geist Mono',monospace;font-size:10px;color:var(--muted)" id="gen-progress-pct">0%</span>
+        </div>
+        <div class="job-loading-bar-wrap">
+          <div class="job-loading-bar-fill" id="gen-progress-bar" style="width:0%"></div>
+        </div>
+      </div>
+
+      <div class="output-wrap">
+        <div class="output-box" id="output-box">
+          <span class="output-box-placeholder">Select a mode above and click Generate →</span>
+        </div>
+        <div class="copy-btn-overlay">
+          <button class="btn btn-xs btn-outline" id="btn-copy-output">Copy</button>
+        </div>
+      </div>
+
+      <div style="padding:0 16px 12px">
+        <button class="btn btn-teal btn-full" id="btn-generate">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          Generate with <span id="gen-model-label">llama3</span>
+        </button>
+      </div>
+
+      <div class="custom-prompt-wrap">
+        <div style="border-top:1px solid var(--rule)">
+          <span class="custom-prompt-label">Custom instruction (optional)</span>
+          <div class="custom-prompt-row">
+            <textarea class="textarea" id="custom-prompt" placeholder="e.g. Make it more concise, emphasize leadership experience…" rows="2"></textarea>
+            <button class="btn btn-ghost-teal btn-sm" id="btn-send-custom">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M22 2 11 13M22 2 15 22 11 13 2 9l20-7z"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ FILL TAB ══════ -->
+    <div class="tab-panel" id="panel-fill">
+      <div class="af-kit">
+        <span class="lbl">Autofill Kit</span>
+        <div class="af-row"><span class="af-label">Name</span><span class="af-value" id="af-name">—</span><button class="btn btn-xs btn-outline af-copy" data-field="af-name">Copy</button></div>
+        <div class="af-row"><span class="af-label">Email</span><span class="af-value" id="af-email">—</span><button class="btn btn-xs btn-outline af-copy" data-field="af-email">Copy</button></div>
+        <div class="af-row"><span class="af-label">Phone</span><span class="af-value" id="af-phone">—</span><button class="btn btn-xs btn-outline af-copy" data-field="af-phone">Copy</button></div>
+        <div class="af-row"><span class="af-label">LinkedIn</span><span class="af-value" id="af-linkedin">—</span><button class="btn btn-xs btn-outline af-copy" data-field="af-linkedin">Copy</button></div>
+        <div class="af-row"><span class="af-label">GitHub</span><span class="af-value" id="af-github">—</span><button class="btn btn-xs btn-outline af-copy" data-field="af-github">Copy</button></div>
+        <div class="af-row" style="align-items:flex-start"><span class="af-label" style="margin-top:2px">Summary</span><span class="af-value" id="af-summary" style="white-space:normal;font-size:11px;max-height:48px;overflow:hidden">—</span><button class="btn btn-xs btn-outline af-copy" data-field="af-summary">Copy</button></div>
+      </div>
+      <div class="p-section">
+        <div class="notice notice-teal">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Works on LinkedIn Easy Apply, Greenhouse, Lever, and Workday. Fields flash teal when filled.
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-teal flex-1" id="btn-autofill">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M12 5v14M5 12h14"/></svg>
+          Auto-fill Page
+        </button>
+        <button class="btn btn-danger-ghost" id="btn-clear-fields">Clear Fields</button>
+      </div>
+    </div>
+
+    <!-- ══════ LOG TAB ══════ -->
+    <div class="tab-panel" id="panel-log">
+      <div class="stats-grid">
+        <div class="stat-box"><div class="stat-num" id="stat-applied">0</div><div class="stat-label">Applied</div></div>
+        <div class="stat-box"><div class="stat-num" id="stat-generated">0</div><div class="stat-label">Generated</div></div>
+        <div class="stat-box"><div class="stat-num" id="stat-filled">0</div><div class="stat-label">Filled</div></div>
+        <div class="stat-box"><div class="stat-num" id="stat-saved">0</div><div class="stat-label">Saved</div></div>
+      </div>
+      <div class="log-list" id="log-list"></div>
+      <div id="log-empty" class="empty" style="padding:24px">
+        <div class="empty-icon">📋</div>
+        <div class="empty-title">No applications logged</div>
+        <div class="empty-desc">Click + on the Job tab to log an application.</div>
+      </div>
+    </div>
+
+    <!-- ══════ ME TAB ══════ -->
+    <div class="tab-panel" id="panel-me">
+      <div class="p-section">
+        <div class="form-group"><label class="form-label" for="me-name">Full Name</label><input class="form-input" id="me-name" type="text" placeholder="Your full name"></div>
+        <div class="form-group"><label class="form-label" for="me-email">Email</label><input class="form-input" id="me-email" type="email" placeholder="you@email.com"></div>
+        <div class="form-group"><label class="form-label" for="me-phone">Phone</label><input class="form-input" id="me-phone" type="tel" placeholder="+1 555 000 0000"></div>
+        <div class="form-group"><label class="form-label" for="me-linkedin">LinkedIn URL</label><input class="form-input" id="me-linkedin" type="url" placeholder="linkedin.com/in/yourprofile"></div>
+        <div class="form-group"><label class="form-label" for="me-github">GitHub URL</label><input class="form-input" id="me-github" type="url" placeholder="github.com/yourusername"></div>
+        <div class="form-group"><label class="form-label" for="me-summary">Resume Summary / Elevator Pitch</label><textarea class="textarea" id="me-summary" rows="5" placeholder="Your background, stack, impact metrics, and what you're looking for. This feeds all AI generation."></textarea></div>
+        <div class="form-group">
+          <label class="form-label">Skills</label>
+          <div class="skills-input-row"><input class="form-input flex-1" id="me-skills-input" type="text" placeholder="Add skill, press Enter or use commas"><button class="btn btn-ghost-teal btn-sm" id="btn-add-skill">Add</button></div>
+          <div class="skill-tags" id="skill-tags"></div>
+        </div>
+        <div class="form-group"><label class="form-label" for="me-model">Preferred Model</label><select class="form-select" id="me-model"><option value="llama3">llama3</option></select></div>
+      </div>
+      <div class="btn-row"><button class="btn btn-teal btn-full" id="btn-save-profile">Save Profile</button></div>
+    </div>
+
+    <!-- ══════ SETUP TAB ══════ -->
+    <div class="tab-panel" id="panel-setup">
+      <div class="p-section">
+        <span class="lbl">Ollama Connection</span>
+        <div class="status-card">
+          <div class="status-left">
+            <div class="status-dot warn" id="setup-dot"></div>
+            <div><div class="status-text" id="setup-status-text">Checking…</div><div class="status-sub" id="setup-status-sub">http://localhost:11434</div></div>
+          </div>
+          <button class="btn btn-outline btn-sm" id="btn-test-connection">Test</button>
+        </div>
+      </div>
+      <div class="p-section">
+        <div class="form-group"><label class="form-label" for="setup-model">Active Model</label><select class="form-select" id="setup-model"><option value="llama3">llama3</option></select></div>
+      </div>
+      <div class="p-section">
+        <span class="lbl" style="margin-bottom:8px">CORS Fix Wizard</span>
+        <div class="cors-box">
+          <div class="cors-box-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> Restart Ollama with CORS enabled</div>
+          <div class="cors-box-desc">If you see errors, restart Ollama using the command for your OS:</div>
+          <div class="os-tabs" id="setup-os-tabs">
+            <button class="os-tab on" data-os="mac">macOS</button>
+            <button class="os-tab" data-os="win">Windows</button>
+            <button class="os-tab" data-os="linux">Linux</button>
+          </div>
+          <div class="os-panel on" id="setup-cors-mac"><div class="code-block">OLLAMA_ORIGINS=* ollama serve<button class="code-copy-btn">Copy</button></div></div>
+          <div class="os-panel" id="setup-cors-win"><div class="code-block">$env:OLLAMA_ORIGINS="*"; ollama serve<button class="code-copy-btn">Copy</button></div></div>
+          <div class="os-panel" id="setup-cors-linux"><div class="code-block">OLLAMA_ORIGINS=* ollama serve<button class="code-copy-btn">Copy</button></div></div>
+        </div>
+      </div>
+      <div class="p-section">
+        <span class="lbl">Supported Sites</span>
+        <div class="site-grid">
+          <div class="site-cell"><div class="site-cell-icon">💼</div>LinkedIn</div>
+          <div class="site-cell"><div class="site-cell-icon">🎯</div>Jobright</div>
+          <div class="site-cell"><div class="site-cell-icon">🔵</div>Indeed</div>
+          <div class="site-cell"><div class="site-cell-icon">🌿</div>Greenhouse</div>
+          <div class="site-cell"><div class="site-cell-icon">⚡</div>Lever</div>
+          <div class="site-cell"><div class="site-cell-icon">☁️</div>Workday</div>
+        </div>
+      </div>
+      <div class="version-footer">JobHunt AI Copilot v4 · Free · Local · Open Source</div>
+    </div>
+
+  </main>
 </div>
 
-<!-- RESULTS -->
-<div class="panel results-panel" id="panel-results">
-  <div class="session-banner" id="sessionBanner">
-    <span style="font-size:11px;color:var(--a2);display:flex;align-items:center;gap:6px;">
-      <span>📂</span><span id="sessionInfo">Restored from last session</span>
-    </span>
-    <button id="btnClearSession" style="font-size:10.5px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:5px;padding:3px 9px;cursor:pointer;font-family:'DM Sans',sans-serif;">✕ Clear</button>
-  </div>
-  <div class="score-header">
-    <div>
-      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">ATS Score</div>
-      <div class="big-score" id="atsScore" style="color:var(--green)">—</div>
-    </div>
-    <div class="score-meta">
-      <div class="score-title" id="scoreTitle">Analysis Complete</div>
-      <div class="score-sub" id="scoreSub">Review your tailored report below</div>
-      <div class="score-bar-track"><div class="score-bar-fill" id="scoreBar"></div></div>
-    </div>
-  </div>
-  <div class="result-actions">
-    <button class="btn btn-indigo btn-sm" id="btnPreview">📄 ATS Resume</button>
-    <button class="btn btn-secondary btn-sm" id="btnDlResume">⬇ Download</button>
-    <button class="btn btn-secondary btn-sm" id="btnDlReport">⬇ Report</button>
-    <button class="btn btn-green btn-sm" id="btnAutofill">⚡ Autofill</button>
-    <button class="btn btn-yellow btn-sm" id="btnRetry">↺ Retry</button>
-    <button class="btn btn-secondary btn-sm" id="btnNew">✕ New</button>
-  </div>
-  <div class="report-content" id="reportContent"></div>
-</div>
-
-<!-- SETTINGS -->
-<div class="panel settings-panel" id="panel-settings">
-  <div class="form-row">
-    <div class="field"><div class="field-label">First Name</div><input id="sFirst"></div>
-    <div class="field"><div class="field-label">Last Name</div><input id="sLast"></div>
-  </div>
-  <div class="field"><div class="field-label">Email</div><input id="sEmail" type="email"></div>
-  <div class="form-row">
-    <div class="field"><div class="field-label">Phone</div><input id="sPhone"></div>
-    <div class="field"><div class="field-label">Location</div><input id="sLoc"></div>
-  </div>
-  <div class="form-row">
-    <div class="field"><div class="field-label">LinkedIn</div><input id="sLinkedin" type="url"></div>
-    <div class="field"><div class="field-label">GitHub</div><input id="sGithub" type="url"></div>
-  </div>
-  <div class="field"><div class="field-label">Portfolio / Website</div><input id="sPortfolio" type="url"></div>
-  <div class="divider"></div>
-  <div class="field">
-    <div class="field-label">Resume Data (JSON)</div>
-    <textarea id="sResume" rows="7"></textarea>
-    <div class="hint">Sent to Ollama with every analysis.</div>
-  </div>
-  <div class="divider"></div>
-  <div class="field"><div class="field-label">Ollama URL</div><input id="sUrl" placeholder="http://localhost:11434"></div>
-  <div class="field">
-    <div class="field-label">Model</div>
-    <div class="model-row">
-      <select id="sModel">
-        <option value="llama3">llama3</option>
-        <option value="llama3.1">llama3.1</option>
-        <option value="llama3.2">llama3.2</option>
-        <option value="mistral">mistral</option>
-        <option value="mixtral">mixtral</option>
-        <option value="gemma2">gemma2</option>
-        <option value="phi3">phi3</option>
-        <option value="qwen2.5">qwen2.5</option>
-        <option value="deepseek-r1">deepseek-r1</option>
-      </select>
-      <button class="btn btn-secondary btn-sm" id="btnLoadModels">↻</button>
-    </div>
-    <div class="hint" id="modelHint">Recommended: llama3 or mistral</div>
-  </div>
-  <button class="save-btn" id="btnSave">💾 Save Profile</button>
-  <button class="reset-btn" id="btnReset">↺ Reset to My Resume Defaults</button>
-  <div class="toast toast-ok" id="toastOk" style="display:none">✓ Saved!</div>
-  <div class="toast toast-err" id="toastErr" style="display:none"></div>
-</div>
-
-<script src="defaults.js"></script>
-<script src="popup.js"></script>
+<div class="toast" id="toast"></div>
+<script src="popup.js" type="module"></script>
 </body>
 </html>
